@@ -19,6 +19,9 @@ apps/web/.next
 apps/web/.next-build
 apps/web/.next-dev
 coverage
+deployment-backups
+**/deployment-backups
+DEPLOYED_COMMIT
 node_modules
 **/node_modules
 playwright-report
