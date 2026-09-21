@@ -525,6 +525,7 @@ function materialize(drafts: PlacementDraft[], holds: HoldAsset[], constraints: 
   for (const draft of drafts) {
     const hold = chooseHold(holds, used, draft, constraints, placements);
     const { desiredGrip: _ignored, ...placement } = draft;
+    void _ignored;
     placements.push({ ...placement, holdId: hold.id, scale: 1 });
   }
   return placements;

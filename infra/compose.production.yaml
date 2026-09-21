@@ -63,6 +63,11 @@ services:
       CAMERA_SNAPSHOT_STALE_MS: ${CAMERA_SNAPSHOT_STALE_MS:-300000}
       CAMERA_WORKER_TOKEN: ${CAMERA_WORKER_TOKEN}
       CAMERA_WORKER_ORGANIZATION_ID: ${CAMERA_WORKER_ORGANIZATION_ID}
+      AI_ROUTE_SETTING_ENABLED: ${AI_ROUTE_SETTING_ENABLED:-false}
+      AI_ROUTE_SETTING_ALLOWED_EMAILS: ${AI_ROUTE_SETTING_ALLOWED_EMAILS:-}
+      DEROUTER_API_KEY: ${DEROUTER_API_KEY:-}
+      DEROUTER_OPENAI_BASE: ${DEROUTER_OPENAI_BASE:-https://api-direct.derouter.ai/openai/v1}
+      DEROUTER_ANTHROPIC_BASE: ${DEROUTER_ANTHROPIC_BASE:-https://api-direct.derouter.ai/proxy}
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,6 +94,8 @@ services:
     environment:
       API_BASE_URL: http://api:3101/api
       NEXT_PUBLIC_API_BASE_URL: http://api:3101/api
+      AI_ROUTE_SETTING_ENABLED: ${AI_ROUTE_SETTING_ENABLED:-false}
+      AI_ROUTE_SETTING_ALLOWED_EMAILS: ${AI_ROUTE_SETTING_ALLOWED_EMAILS:-}
     depends_on:
       api:
         condition: service_healthy

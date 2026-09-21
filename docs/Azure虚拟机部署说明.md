@@ -192,6 +192,16 @@ curl https://galsync-climbing-demo-01.southeastasia.cloudapp.azure.com/backend/h
 
 应用发布必须使用已通过本地验证的确切 Git commit 生成仅含跟踪文件的发布包，不把 `.git`、`.env`、`node_modules`、本地录像和备份上传。服务器保留现有 `.env.production`，将发布 commit 写入 `/opt/climbing-demo/DEPLOYED_COMMIT`。
 
+### AI 定线灰度发布
+
+AI 定线随 Web/API 镜像发布，但生产环境默认关闭。`AI_ROUTE_SETTING_ENABLED=false` 时，导航不显示该入口，直接访问页面和调用 API 也无法使用；旧岩点库、线路库与视觉 Worker 不依赖此开关。本次模块没有新增 Prisma migration。
+
+仅在确认试用账号后，才在服务器现有 `.env.production` 中设置 `AI_ROUTE_SETTING_ENABLED=true` 和 `AI_ROUTE_SETTING_ALLOWED_EMAILS=试用账号邮箱`（多个邮箱用逗号分隔），重建或重启 Web/API。生产环境的空白名单仍拒绝所有账号；只有显式写入 `*` 才允许所有具备原有资产草案权限的账号使用。
+
+需要云端模型时，把 `DEROUTER_API_KEY` 仅写入服务器私密配置。生产 Compose 只把它传给 API 容器，Web 不接收该密钥；未设置密钥时仍使用本地求解回退。不要把密钥写入发布包、Git、浏览器变量或命令输出。灰度验证应检查三种模式、定线生成与回退、原有业务模块以及 Worker 心跳。
+
+板面人工修改当前仍保存在各浏览器的本地存储中，不会跨设备、账号或岩馆同步；多人正式运营前需另做按岩馆隔离的服务端板面版本存储。
+
 建议通过 `infra/deploy-production.sh` 完成主应用备份、构建、migration 和健康检查：
 
 ```bash

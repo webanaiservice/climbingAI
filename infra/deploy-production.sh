@@ -50,7 +50,8 @@ sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T postgres \
 sudo docker compose --env-file "$env_file" -f "$compose_file" build api web
 sudo docker compose --env-file "$env_file" -f "$compose_file" run --rm api \
   pnpm --filter @climbing-crm/api prisma migrate deploy
-sudo docker compose --env-file "$env_file" -f "$compose_file" up -d
+# Keep PostgreSQL, MinIO, Caddy, and the independently managed vision worker untouched.
+sudo docker compose --env-file "$env_file" -f "$compose_file" up -d --no-deps api web
 sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T caddy \
   caddy validate --config /etc/caddy/Caddyfile
 sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T caddy \
