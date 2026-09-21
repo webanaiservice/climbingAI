@@ -22,7 +22,9 @@ interface DashboardShellProps {
 
 export function DashboardShell({ children, session }: DashboardShellProps) {
   const pathname = usePathname();
-  const [assetsOpen, setAssetsOpen] = useState(pathname.startsWith('/dashboard/assets'));
+  const [assetsOpen, setAssetsOpen] = useState(
+    pathname.startsWith('/dashboard/assets') || pathname.startsWith('/dashboard/route-setting'),
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
