@@ -8,6 +8,7 @@
 
 - 邮箱注册、登录、HTTP-only Session、`L1_ADMIN` / `L2_ADMIN` 权限和组织级租户隔离。
 - 岩点规格、照片、GLB 模型、库存余额与不可变流水的增删改查。
+- 登录后的 AI 辅助定线模块：独立单点岩点库、自由墙/固定板/天宇训练板、人工调点和三条候选线路。
 - RFID 标签、单件追踪、盘点会话和跨馆流转领域接口。
 - 通过摄像头截图和浏览器端 SlimSAM 标注岩点轮廓，设置线路起点、终点并创建线路版本。
 - 线路查询、编辑、停用、恢复、删除、二维码反馈和单线路复盘。
@@ -74,12 +75,14 @@ docs/                     领域规格、部署、算法和交接文档
 ### 2. 配置环境
 
 ```bash
-git clone https://github.com/flackothegoat/climbing-crm-poc.git
-cd climbing-crm-poc
+git clone https://github.com/webanaiservice/climbingAI.git
+cd climbingAI
 cp .env.example .env
 ```
 
 在 `.env` 中替换 PostgreSQL、MinIO 和 Worker 占位值。不要提交 `.env`、生产密钥、数据库备份、录像或 SSH 私钥。
+
+使用云端 AI 定线时，还需仅在 API 服务端的 `.env` 或部署平台私密环境变量中设置 `DEROUTER_API_KEY`。可按需覆盖 `DEROUTER_OPENAI_BASE` 和 `DEROUTER_ANTHROPIC_BASE`；不要设置为 `NEXT_PUBLIC_*`，也不要把密钥写进 Web 配置或提交到仓库。未配置密钥时，定线模块会提示并使用本地约束求解器。
 
 ### 3. 安装并启动 Web/API
 
@@ -96,6 +99,7 @@ pnpm dev
 
 - Web：<http://localhost:3100>
 - API：<http://localhost:3101/api>
+- AI 定线：登录后进入 <http://localhost:3100/dashboard/route-setting>
 - Swagger：<http://localhost:3101/api/docs>
 - PostgreSQL：`localhost:5434`
 - MinIO Console：<http://localhost:9003>
@@ -162,6 +166,9 @@ Azure 是唯一演示环境，当前不启用自动 CD。发布必须先备份 P
 - [实地考察与演示确认清单](docs/岩馆实地考察与POC演示确认清单.md)
 
 ## 已知边界
+
+- AI 定线模块沿用原 POC 的单点产品目录和天宇板视觉点位，固定板编辑存于当前浏览器 `localStorage`；它尚未与平台数据库中的岩点库存、墙孔安装记录或线路版本自动同步。切换域名/端口或浏览器不会自动迁移已有本机存档。
+- AI 候选是人工审核草案，不能直接发布为平台正式线路或代替现场试爬、落地区域与安装安全检查。生成接口要求登录和定线权限，并按账号限流 12 次/小时。
 
 - 单摄像头 POC 暂不支持多人同时攀爬、多机位三维接触确认或通用赛事判罚。
 - 摄像头 PTZ、变焦、分辨率、安装位置或墙面发生变化后，必须重新建立无人墙面参考并复核线路视觉定义。

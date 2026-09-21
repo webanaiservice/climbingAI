@@ -14,6 +14,7 @@ export const primaryNavigation: NavigationItem[] = [
 export const assetNavigation: NavigationItem[] = [
   { href: '/dashboard/assets/holds', icon: 'holds', label: '岩点库' },
   { href: '/dashboard/assets/routes', icon: 'routes', label: '线路库' },
+  { href: '/dashboard/route-setting', icon: 'routes', label: 'AI 定线' },
 ];
 
 export const secondaryNavigation: NavigationItem[] = [
@@ -25,6 +26,7 @@ export const pageTitles: Record<string, string> = {
   '/dashboard/team': '员工管理',
   '/dashboard/assets/holds': '岩点库',
   '/dashboard/assets/routes': '线路库',
+  '/dashboard/route-setting': 'AI 定线',
   '/dashboard/camera': '视频识别',
   ...Object.fromEntries(secondaryNavigation.map((item) => [item.href, item.label])),
 };

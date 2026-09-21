@@ -56,6 +56,9 @@ const environmentSchema = z
       .default(5 * 60 * 1000),
     CAMERA_WORKER_TOKEN: z.string().min(32).optional(),
     CAMERA_WORKER_ORGANIZATION_ID: z.string().trim().min(1).max(128).optional(),
+    DEROUTER_API_KEY: z.string().trim().min(1).optional(),
+    DEROUTER_OPENAI_BASE: z.string().url().default('https://api-direct.derouter.ai/openai/v1'),
+    DEROUTER_ANTHROPIC_BASE: z.string().url().default('https://api-direct.derouter.ai/proxy'),
   })
   .superRefine((environment, context) => {
     if (environment.NODE_ENV === 'production' && !environment.SESSION_COOKIE_SECURE) {

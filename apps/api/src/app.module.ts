@@ -6,6 +6,7 @@ import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { TeamModule } from './team/team.module';
 import { RoutesModule } from './routes/routes.module';
 import { CameraModule } from './camera/camera.module';
+import { RouteSettingModule } from './route-setting/route-setting.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { CameraModule } from './camera/camera.module';
     TeamModule,
     HoldsModule,
     RoutesModule,
+    RouteSettingModule,
     CameraModule,
     HealthModule,
   ],
