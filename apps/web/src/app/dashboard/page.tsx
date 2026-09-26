@@ -26,7 +26,7 @@ export default function DashboardPage() {
       <section className="overview-grid">
         <SectionCard
           title="核心模块"
-          description="系统只保留两条业务主线，其他能力不进入当前产品界面。"
+          description="连接岩点资产、线路运营与运动员训练，让日常记录形成持续积累。"
           className="module-section"
         >
           <div className="core-module-grid">
@@ -43,6 +43,13 @@ export default function DashboardPage() {
               title="线路库"
               description="建档、视觉、反馈与复盘"
               status="第一阶段"
+            />
+            <CoreModuleCard
+              href="/dashboard/training"
+              icon="team"
+              title="训练中心"
+              description="运动员档案、视频复盘与复测"
+              status="训练闭环"
             />
           </div>
         </SectionCard>
@@ -67,7 +74,7 @@ export default function DashboardPage() {
       </section>
       <SectionCard
         title="当前演示路径"
-        description="先展示两条独立主线的真实价值，再逐步建立可选关联。"
+        description="从资产、线路到训练，逐步建立可追溯的日常运营记录。"
       >
         <div className="demo-path">
           <span>1</span>
@@ -104,8 +111,8 @@ function OverviewHero() {
     <section className="overview-hero">
       <div className="overview-hero-copy">
         <p className="page-eyebrow">CLIMBING GYM · DIGITAL FOUNDATION</p>
-        <h2>岩点库与线路库</h2>
-        <p>先把岩馆有什么岩点、正在运营什么线路说明白，再积累反馈和后续智能能力。</p>
+        <h2>让岩馆运营与训练有据可依</h2>
+        <p>管理岩点与线路，记录运动员成长，用视频复盘连接每一次训练。</p>
         <span className="poc-badge is-inverse">
           <i />
           POC 环境
@@ -130,7 +137,7 @@ function RouteVisual() {
       </svg>
       <span className="route-visual-label">
         <small>当前产品范围</small>
-        <strong>岩点资产 · 线路视觉 · 会员反馈</strong>
+        <strong>岩点资产 · 线路运营 · 运动员训练</strong>
       </span>
     </div>
   );

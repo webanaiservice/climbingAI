@@ -51,3 +51,6 @@ temp/
 __pycache__/
 *.pyc
 services/vision-worker/.venv/
+
+# Private local training video storage
+.local/

@@ -21,6 +21,13 @@ describe('环境配置', () => {
       SESSION_COOKIE_SECURE: 'true',
     });
     expect(environment.SWAGGER_ENABLED).toBe(false);
+    expect(environment.AI_ROUTE_SETTING_ENABLED).toBe(false);
+  });
+
+  it('开发环境默认开放定线，空密钥视为未配置', () => {
+    const environment = readEnvironment({ ...required, DEROUTER_API_KEY: '' });
+    expect(environment.AI_ROUTE_SETTING_ENABLED).toBe(true);
+    expect(environment.DEROUTER_API_KEY).toBeUndefined();
   });
 
   it('默认提供可覆盖的 H.264 摄像头播放配置', () => {

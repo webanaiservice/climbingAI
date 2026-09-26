@@ -50,7 +50,26 @@ sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T postgres \
 sudo docker compose --env-file "$env_file" -f "$compose_file" build api web
 sudo docker compose --env-file "$env_file" -f "$compose_file" run --rm api \
   pnpm --filter @climbing-crm/api prisma migrate deploy
-sudo docker compose --env-file "$env_file" -f "$compose_file" up -d
+# Keep PostgreSQL, MinIO, Caddy, and the independently managed vision worker untouched.
+sudo docker compose --env-file "$env_file" -f "$compose_file" up -d --no-deps api web
+
+api_container="$(sudo docker compose --env-file "$env_file" -f "$compose_file" ps -q api)"
+web_container="$(sudo docker compose --env-file "$env_file" -f "$compose_file" ps -q web)"
+for container in "$api_container" "$web_container"; do
+  for _ in $(seq 1 36); do
+    health="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$container")"
+    [[ "$health" == healthy ]] && break
+    [[ "$health" == unhealthy ]] && break
+    sleep 5
+  done
+  health="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$container")"
+  if [[ "$health" != healthy ]]; then
+    sudo docker compose --env-file "$env_file" -f "$compose_file" logs --tail=120 api web >&2
+    printf 'Production container failed health check: %s (%s)\n' "$container" "$health" >&2
+    exit 1
+  fi
+done
+
 sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T caddy \
   caddy validate --config /etc/caddy/Caddyfile
 sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T caddy \
@@ -87,23 +106,6 @@ assert_public_status 'WVP interface' "https://${app_domain}/wvp/" 200
 # This endpoint can require a WVP login and return 401/403. A 404 or 5xx means
 # the UI's configured /wvp-api namespace is no longer reaching the WVP backend.
 assert_public_not_missing 'WVP API proxy' "https://${app_domain}/wvp-api/api/server/system/info"
-
-api_container="$(sudo docker compose --env-file "$env_file" -f "$compose_file" ps -q api)"
-web_container="$(sudo docker compose --env-file "$env_file" -f "$compose_file" ps -q web)"
-for container in "$api_container" "$web_container"; do
-  for _ in $(seq 1 36); do
-    health="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$container")"
-    [[ "$health" == healthy ]] && break
-    [[ "$health" == unhealthy ]] && break
-    sleep 5
-  done
-  health="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$container")"
-  if [[ "$health" != healthy ]]; then
-    sudo docker compose --env-file "$env_file" -f "$compose_file" logs --tail=120 api web >&2
-    printf 'Production container failed health check: %s (%s)\n' "$container" "$health" >&2
-    exit 1
-  fi
-done
 
 sudo docker compose --env-file "$env_file" -f "$compose_file" exec -T api \
   sh -lc 'command -v ffmpeg >/dev/null && node -e '\''fetch("http://127.0.0.1:3101/api/health").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'\'''

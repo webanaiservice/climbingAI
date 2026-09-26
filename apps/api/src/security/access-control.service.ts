@@ -3,6 +3,9 @@ import { MembershipRole } from '@prisma/client';
 import type { CurrentSession } from '../auth/session.service';
 
 export enum Capability {
+  TRAINING_READ = 'TRAINING_READ',
+  TRAINING_WRITE = 'TRAINING_WRITE',
+  TRAINING_REVIEW = 'TRAINING_REVIEW',
   TEAM_READ = 'TEAM_READ',
   TEAM_MANAGE = 'TEAM_MANAGE',
   HOLD_READ = 'HOLD_READ',
@@ -17,6 +20,9 @@ export enum Capability {
 }
 
 const l2Capabilities = new Set([
+  Capability.TRAINING_READ,
+  Capability.TRAINING_WRITE,
+  Capability.TRAINING_REVIEW,
   Capability.TEAM_READ,
   Capability.HOLD_READ,
   Capability.HOLD_WRITE,

@@ -18,9 +18,10 @@ import {
 interface DashboardShellProps {
   children: ReactNode;
   session: AuthenticatedSession;
+  routeSettingEnabled: boolean;
 }
 
-export function DashboardShell({ children, session }: DashboardShellProps) {
+export function DashboardShell({ children, session, routeSettingEnabled }: DashboardShellProps) {
   const pathname = usePathname();
   const [assetsOpen, setAssetsOpen] = useState(
     pathname.startsWith('/dashboard/assets') || pathname.startsWith('/dashboard/route-setting'),
@@ -45,6 +46,7 @@ export function DashboardShell({ children, session }: DashboardShellProps) {
         mobileOpen={mobileOpen}
         pathname={pathname}
         session={session}
+        routeSettingEnabled={routeSettingEnabled}
         onAssetToggle={() => setAssetsOpen((value) => !value)}
         onNavigate={() => setMobileOpen(false)}
       />
@@ -74,6 +76,7 @@ interface SidebarProps {
   mobileOpen: boolean;
   pathname: string;
   session: AuthenticatedSession;
+  routeSettingEnabled: boolean;
   onAssetToggle: () => void;
   onNavigate: () => void;
 }
@@ -99,6 +102,7 @@ function Sidebar(props: SidebarProps) {
           pathname={props.pathname}
           onNavigate={props.onNavigate}
           onToggle={props.onAssetToggle}
+          routeSettingEnabled={props.routeSettingEnabled}
         />
         <p className="navigation-label">系统管理</p>
         <NavigationList
@@ -168,13 +172,15 @@ function AssetNavigation({
   pathname,
   onNavigate,
   onToggle,
+  routeSettingEnabled,
 }: {
   open: boolean;
   pathname: string;
   onNavigate: () => void;
   onToggle: () => void;
+  routeSettingEnabled: boolean;
 }) {
-  const active = pathname.startsWith('/dashboard/assets');
+  const active = pathname.startsWith('/dashboard/assets') || pathname.startsWith('/dashboard/route-setting');
   return (
     <div className="navigation-group">
       <button
@@ -189,7 +195,11 @@ function AssetNavigation({
       </button>
       {open && (
         <div className="navigation-children">
-          <NavigationList items={assetNavigation} pathname={pathname} onNavigate={onNavigate} />
+          <NavigationList
+            items={routeSettingEnabled ? assetNavigation : assetNavigation.filter((item) => item.href !== '/dashboard/route-setting')}
+            pathname={pathname}
+            onNavigate={onNavigate}
+          />
         </div>
       )}
     </div>

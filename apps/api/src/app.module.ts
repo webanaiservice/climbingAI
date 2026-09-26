@@ -1,3 +1,4 @@
+import { TrainingModule } from './training/training.module';
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
@@ -18,6 +19,7 @@ import { RouteSettingModule } from './route-setting/route-setting.module';
     RouteSettingModule,
     CameraModule,
     HealthModule,
+    TrainingModule,
   ],
 })
 export class AppModule {}

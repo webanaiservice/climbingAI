@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, NotFoundException, Post, Res, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { CurrentSessionContext } from '../auth/current-session.decorator';
@@ -27,6 +27,17 @@ export class RouteSettingController {
     @Body() body: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
+    const { AI_ROUTE_SETTING_ENABLED, AI_ROUTE_SETTING_ALLOWED_EMAILS, NODE_ENV } =
+      this.config.values;
+    const allowedEmails = AI_ROUTE_SETTING_ALLOWED_EMAILS.split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    const accountAllowed = allowedEmails.includes('*') ||
+      allowedEmails.includes(session.account.email.toLowerCase()) ||
+      (NODE_ENV !== 'production' && allowedEmails.length === 0);
+    if (!AI_ROUTE_SETTING_ENABLED || !accountAllowed) {
+      throw new NotFoundException('AI 定线功能暂未开放');
+    }
     this.access.assert(session, Capability.ASSET_DRAFT_WRITE);
     await this.rateLimits.consume(
       'ai-route-candidates',

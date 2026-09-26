@@ -56,9 +56,19 @@ const environmentSchema = z
       .default(5 * 60 * 1000),
     CAMERA_WORKER_TOKEN: z.string().min(32).optional(),
     CAMERA_WORKER_ORGANIZATION_ID: z.string().trim().min(1).max(128).optional(),
-    DEROUTER_API_KEY: z.string().trim().min(1).optional(),
+    TRAINING_AI_MODEL: z
+      .enum(['claude-opus-5-5', 'gpt-6-astra', 'gpt-6-sol'])
+      .default('gpt-6-astra'),
+    TRAINING_STORAGE_PATH: z.string().trim().min(1).optional(),
+    TRAINING_FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
+    DEROUTER_API_KEY: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().trim().min(1).optional(),
+    ),
     DEROUTER_OPENAI_BASE: z.string().url().default('https://api-direct.derouter.ai/openai/v1'),
     DEROUTER_ANTHROPIC_BASE: z.string().url().default('https://api-direct.derouter.ai/proxy'),
+    AI_ROUTE_SETTING_ENABLED: booleanString.optional(),
+    AI_ROUTE_SETTING_ALLOWED_EMAILS: z.string().default(''),
   })
   .superRefine((environment, context) => {
     if (environment.NODE_ENV === 'production' && !environment.SESSION_COOKIE_SECURE) {
@@ -71,6 +81,8 @@ const environmentSchema = z
   })
   .transform((environment) => ({
     ...environment,
+    AI_ROUTE_SETTING_ENABLED:
+      environment.AI_ROUTE_SETTING_ENABLED ?? environment.NODE_ENV !== 'production',
     PUBLIC_LINK_SIGNING_KEY: environment.PUBLIC_LINK_SIGNING_KEY ?? environment.MINIO_SECRET_KEY,
     SWAGGER_ENABLED: environment.SWAGGER_ENABLED ?? environment.NODE_ENV !== 'production',
   }));

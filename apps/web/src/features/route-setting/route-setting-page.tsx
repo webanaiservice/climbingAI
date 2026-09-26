@@ -40,6 +40,7 @@ import { Skeleton } from "./ui/skeleton";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import {
+  attachTianyuRegistration,
   mergeTianyuReview,
   normalizeTianyuHolds,
   tianyuAssetDescription,
@@ -49,7 +50,9 @@ import {
   type StoredTianyuBoard,
   type TianyuHold,
   type TianyuSeedPayload,
+  type TianyuRegistrationReport,
 } from "./tianyu-board";
+import { TianyuRegistrationInspector, TianyuRegistrationSummary } from "./tianyu-registration-view";
 import {
   Select,
   SelectContent,
@@ -267,6 +270,7 @@ const materialFilters = ["全部", "PU", "ABS", "木质", "玻璃钢"];
 const candidateAccents = ["#ff5a36", "#2f84ff", "#d953c9"];
 const fixedBoardStorageKey = "ai-gym.fixed-board.v1";
 const tianyuSeedUrl = "/data/tianyu-reviewed-holds.json";
+const tianyuRegistrationUrl = "/data/tianyu-registration-r1.json";
 const randomFixedBoardHoldCount = 28;
 const tianyuAngles = Array.from({ length: 13 }, (_, index) => index * 5);
 const tianyuGripOptions = ["综合", "把手", "开放点", "捏点", "边缘点", "造型"];
@@ -453,6 +457,9 @@ export default function RouteSettingPage() {
   const [freePlacements, setFreePlacements] = useState<Placement[]>([]);
   const [fixedBoardPlacements, setFixedBoardPlacements] = useState<Placement[]>([]);
   const [tianyuHolds, setTianyuHolds] = useState<TianyuHold[]>([]);
+  const [tianyuRegistration, setTianyuRegistration] = useState<TianyuRegistrationReport | null>(null);
+  const [tianyuImageMode, setTianyuImageMode] = useState<"photo" | "overlay" | "scan">("photo");
+  const [tianyuOverlayOpacity, setTianyuOverlayOpacity] = useState(0.5);
   const [tianyuLoading, setTianyuLoading] = useState(true);
   const [tianyuAngle, setTianyuAngle] = useState(30);
   const [tianyuAnnotating, setTianyuAnnotating] = useState(false);
@@ -598,19 +605,26 @@ export default function RouteSettingPage() {
         setTianyuStorageMessage("正在载入 GPT-6 复核版点位图。原存档将保留备份。");
       }
 
-      void fetch(tianyuSeedUrl)
-        .then((response) => {
+      void Promise.all([fetch(tianyuSeedUrl).then((response) => {
           if (!response.ok) throw new Error("复核数据加载失败");
           return response.json() as Promise<TianyuSeedPayload>;
-        })
-        .then((seed) => {
+        }), fetch(tianyuRegistrationUrl).then((response) => {
+          if (!response.ok) throw new Error("配准资料加载失败");
+          return response.json() as Promise<TianyuRegistrationReport>;
+        }).then((report) => report.version === 1 && report.points && report.validation ? report : null).catch(() => null)])
+        .then(([seed, registration]) => {
           if (cancelled) return;
           if (seed.version !== 2 || seed.reviewRevision !== tianyuReviewRevision || !Array.isArray(seed.holds)) throw new Error("复核版本不匹配");
-          const normalized = normalizeTianyuHolds(seed.holds).map((hold) => ({ ...hold, confirmed: true }));
+          setTianyuRegistration(registration);
+          const enrich = (points: TianyuHold[]) => registration ? attachTianyuRegistration(points, registration) : points;
+          const normalized = enrich(normalizeTianyuHolds(seed.holds).map((hold) => ({ ...hold, confirmed: true })));
           if (normalized.length < 6 || normalized.length !== seed.holds.length) throw new Error("复核数据不完整");
           setTianyuAutoSeed(normalized);
-          if (stored?.reviewRevision === tianyuReviewRevision) return;
-          const next = stored ? mergeTianyuReview(stored.holds, normalizeTianyuHolds(seed.legacyHolds), normalized) : normalized;
+          if (stored?.reviewRevision === tianyuReviewRevision) {
+            setTianyuHolds(enrich(stored.holds));
+            return;
+          }
+          const next = enrich(stored ? mergeTianyuReview(stored.holds, normalizeTianyuHolds(seed.legacyHolds), normalized) : normalized);
           const ready = next.length >= 6 && Math.max(...next.map((hold) => hold.y)) - Math.min(...next.map((hold) => hold.y)) >= 42;
           const readiness = ready ? "可直接定线" : "已保留你的点位删改，可补点或恢复复核版后定线";
           const savedAt = new Date().toISOString();
@@ -1401,9 +1415,11 @@ export default function RouteSettingPage() {
                 <MapPin size={18} />
                 <div>
                   <strong>4 × 4 m 实物板 · 已矫正为正方形</strong>
-                  <span>GPT-6 已结合照片与 GLB 粗几何复核点位；0° 为直壁，60° 为最大仰角。</span>
+                  <span>已复核照片点位，并补充照片与扫描表面的配准资料；0° 为直壁，60° 为最大仰角。</span>
                 </div>
               </div>
+
+              {tianyuRegistration && <TianyuRegistrationSummary report={tianyuRegistration} holds={tianyuHolds} />}
 
               <Button
                 className={tianyuAnnotating ? "annotation-toggle active" : "annotation-toggle"}
@@ -1451,6 +1467,7 @@ export default function RouteSettingPage() {
                       {selectedTianyuHold.confirmed ? "已确认" : "待确认"}
                     </span>
                   </div>
+                  <TianyuRegistrationInspector point={selectedTianyuHold} report={tianyuRegistration} />
                   <label>
                     <span>抓握类型</span>
                     <Select value={selectedTianyuHold.grip} onValueChange={(value) => updateTianyuHold(selectedTianyuHold.id, { grip: value })}>
@@ -1511,7 +1528,7 @@ export default function RouteSettingPage() {
                 {tianyuBoardSavedLabel}
               </div>
               {tianyuStorageMessage && <div className="ai-warning" role="status">{tianyuStorageMessage}</div>}
-              <p className="library-footnote">GLB 提供整体凸起参考，尚未与照片逐点精确配准，不推断精确抓深、摩擦或受力方向。大体积基体不单独计点，其上独立岩点分别收录。</p>
+              <p className="library-footnote">GLB 有覆盖的点已建立逐点表面关联；顶部约 15% 无扫描，局部证据不足的点标为待复核。配准不等于整颗岩点分割，不推断精确抓深、摩擦或受力方向。照片点位均保留定线和人工修改能力。</p>
             </>
           ) : (
             <>
@@ -1684,6 +1701,13 @@ export default function RouteSettingPage() {
             </div>
           )}
 
+          {routeMode === "tianyu" && tianyuRegistration && <div className="tianyu-registration-controls" aria-label="配准对照">
+            <span>配准对照</span>
+            {(["photo", "overlay", "scan"] as const).map((mode) => <Button key={mode} size="sm" variant={tianyuImageMode === mode ? "default" : "outline"} aria-pressed={tianyuImageMode === mode} onClick={() => setTianyuImageMode(mode)}>{({ photo: "照片", overlay: "照片 + GLB", scan: "GLB 投影" })[mode]}</Button>)}
+            {tianyuImageMode === "overlay" && <label>扫描透明度<input aria-label="扫描透明度" type="range" min="0" max="1" step="0.05" value={tianyuOverlayOpacity} onChange={(event) => setTianyuOverlayOpacity(Number(event.target.value))} /></label>}
+            <small>点击岩点查看其配准状态；GLB 投影留白处没有扫描。</small>
+          </div>}
+
           <div className="wall-frame">
             {routeMode === "tianyu" ? (
               <div
@@ -1691,7 +1715,8 @@ export default function RouteSettingPage() {
                 ref={wallRef}
                 onClick={handleTianyuPhotoClick}
               >
-                <img className="tianyu-photo" src="/boards/tianyu/front-square.jpg" alt="天宇4乘4米可调角度训练板透视矫正正面照片" draggable={false} />
+                <img className="tianyu-photo" style={{ opacity: tianyuImageMode === "scan" ? 0 : 1 }} src="/boards/tianyu/front-square.jpg" alt="天宇4乘4米可调角度训练板透视矫正正面照片" draggable={false} />
+                {tianyuRegistration && tianyuImageMode !== "photo" && <img className="tianyu-photo tianyu-registration-overlay" style={{ opacity: tianyuImageMode === "scan" ? 1 : tianyuOverlayOpacity }} src={tianyuRegistration.assets.projection} alt="与照片配准后的原始 GLB 投影，顶部空白为扫描缺失区域" draggable={false} />}
                 <svg className="tianyu-board-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <polygon points={`${tianyuPhotoQuad.topLeft.x},${tianyuPhotoQuad.topLeft.y} ${tianyuPhotoQuad.topRight.x},${tianyuPhotoQuad.topRight.y} ${tianyuPhotoQuad.bottomRight.x},${tianyuPhotoQuad.bottomRight.y} ${tianyuPhotoQuad.bottomLeft.x},${tianyuPhotoQuad.bottomLeft.y}`} />
                 </svg>

@@ -1,4 +1,4 @@
-{$APP_DOMAIN} {
+{$APP_DOMAIN}, yirocks.com {
   encode zstd gzip
 
   @nextStatic path /_next/static/*
@@ -35,9 +35,13 @@
   }
 
   header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Strict-Transport-Security "max-age=31536000"
     X-Content-Type-Options "nosniff"
     Referrer-Policy "strict-origin-when-cross-origin"
     -Server
   }
+}
+
+www.yirocks.com {
+  redir https://yirocks.com{uri} 308
 }

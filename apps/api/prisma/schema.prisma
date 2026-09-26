@@ -461,6 +461,8 @@ model Account {
 }
 
 model Organization {
+  trainingAthletes            TrainingAthlete[]
+  trainingCourses             TrainingCourse[]
   id                          String                          @id @default(cuid())
   name                        String
   memberships                 Membership[]
@@ -1152,6 +1154,7 @@ model Route {
 }
 
 model RouteVersion {
+  trainingCourses        TrainingCourse[]
   id                     String                    @id @default(cuid())
   organizationId         String
   routeId                String
@@ -1771,4 +1774,189 @@ model RateLimitRecord {
 
   @@unique([scope, subjectKey])
   @@index([windowEnds])
+}
+
+// Training records are retained independently from short-lived camera evidence.
+model TrainingAthlete {
+  id             String                @id @default(cuid())
+  organizationId String
+  name           String
+  birthDate      DateTime?             @db.Date
+  trainingSince  DateTime?             @db.Date
+  coachName      String                @default("")
+  groupName      String                @default("")
+  goal           String                @default("")
+  notes          String                @default("")
+  archived       Boolean               @default(false)
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  measurements   TrainingMeasurement[]
+  sessions       TrainingSession[]
+  attempts       TrainingAttempt[]
+  tasks          TrainingTask[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([organizationId, id])
+  @@index([organizationId, archived])
+}
+
+model TrainingMeasurement {
+  id             String          @id @default(cuid())
+  organizationId String
+  athleteId      String
+  measuredAt     DateTime        @db.Date
+  heightCm       Float?
+  weightKg       Float?
+  armSpanCm      Float?
+  testName       String          @default("")
+  testResult     String          @default("")
+  notes          String          @default("")
+  athlete        TrainingAthlete @relation(fields: [organizationId, athleteId], references: [organizationId, id], onDelete: Cascade)
+  createdAt      DateTime        @default(now())
+
+  @@index([organizationId, athleteId, measuredAt])
+}
+
+model TrainingCourse {
+  id                String            @id @default(cuid())
+  organizationId    String
+  name              String
+  kind              String
+  version           String
+  standardReference String            @default("")
+  notes             String            @default("")
+  routeVersionId    String?
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  routeVersion      RouteVersion?     @relation(fields: [routeVersionId], references: [id], onDelete: Restrict)
+  attempts          TrainingAttempt[]
+  createdAt         DateTime          @default(now())
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name, version])
+}
+
+model TrainingSession {
+  id              String            @id @default(cuid())
+  organizationId  String
+  athleteId       String
+  trainedAt       DateTime          @db.Date
+  focus           String
+  category        String
+  durationMinutes Int
+  fatigue         Int?
+  painNote        String            @default("")
+  actualWork      String            @default("")
+  notes           String            @default("")
+  athlete         TrainingAthlete   @relation(fields: [organizationId, athleteId], references: [organizationId, id], onDelete: Cascade)
+  attempts        TrainingAttempt[]
+  createdAt       DateTime          @default(now())
+
+  @@unique([organizationId, athleteId, id])
+  @@index([organizationId, trainedAt])
+}
+
+model TrainingAttempt {
+  id                String             @id @default(cuid())
+  organizationId    String
+  athleteId         String
+  sessionId         String?
+  courseId          String
+  attemptedAt       DateTime
+  lane              String
+  type              String
+  outcome           String
+  timeMs            Int?
+  timingSource      String
+  targetDescription String             @default("")
+  notes             String             @default("")
+  events            Json               @default("[]")
+  athlete           TrainingAthlete    @relation(fields: [organizationId, athleteId], references: [organizationId, id], onDelete: Cascade)
+  session           TrainingSession?   @relation(fields: [organizationId, athleteId, sessionId], references: [organizationId, athleteId, id], onDelete: Restrict)
+  course            TrainingCourse     @relation(fields: [organizationId, courseId], references: [organizationId, id], onDelete: Restrict)
+  video             TrainingVideo?
+  analyses          TrainingAnalysis[]
+  retestTasks       TrainingTask[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, athleteId, id])
+  @@index([organizationId, athleteId, attemptedAt])
+}
+
+model TrainingVideo {
+  id             String             @id @default(cuid())
+  organizationId String
+  attemptId      String             @unique
+  filename       String
+  objectKey      String             @unique
+  originalKey    String             @unique
+  sizeBytes      Int
+  durationMs     Int
+  sha256         String
+  uploadedBy     String
+  attempt        TrainingAttempt    @relation(fields: [organizationId, attemptId], references: [organizationId, id], onDelete: Cascade)
+  analyses       TrainingAnalysis[]
+  createdAt      DateTime           @default(now())
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, attemptId])
+}
+
+model TrainingAnalysis {
+  id             String           @id @default(cuid())
+  organizationId String
+  attemptId      String
+  videoId        String
+  status         String           @default("QUEUED")
+  model          String
+  inputSnapshot  Json
+  report         Json?
+  error          String?
+  requestedBy    String
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  attempt        TrainingAttempt  @relation(fields: [organizationId, attemptId], references: [organizationId, id], onDelete: Cascade)
+  video          TrainingVideo    @relation(fields: [organizationId, videoId], references: [organizationId, id], onDelete: Restrict)
+  reviews        TrainingReview[]
+  tasks          TrainingTask[]
+  createdAt      DateTime         @default(now())
+
+  @@unique([organizationId, id])
+  @@index([status, createdAt])
+}
+
+model TrainingReview {
+  id             String           @id @default(cuid())
+  organizationId String
+  analysisId     String
+  decision       String
+  comment        String
+  reviewedBy     String
+  analysis       TrainingAnalysis @relation(fields: [organizationId, analysisId], references: [organizationId, id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+
+  @@index([analysisId, createdAt])
+}
+
+model TrainingTask {
+  id              String            @id @default(cuid())
+  organizationId  String
+  athleteId       String
+  analysisId      String?
+  title           String
+  instructions    String
+  criterion       String
+  dueAt           DateTime?         @db.Date
+  status          String            @default("TODO")
+  retestAttemptId String?
+  resultNote      String            @default("")
+  createdBy       String
+  athlete         TrainingAthlete   @relation(fields: [organizationId, athleteId], references: [organizationId, id], onDelete: Cascade)
+  analysis        TrainingAnalysis? @relation(fields: [organizationId, analysisId], references: [organizationId, id], onDelete: Restrict)
+  retestAttempt   TrainingAttempt?  @relation(fields: [organizationId, athleteId, retestAttemptId], references: [organizationId, athleteId, id], onDelete: Restrict)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([organizationId, athleteId, status])
 }

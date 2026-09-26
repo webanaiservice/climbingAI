@@ -7,9 +7,13 @@
 !.env.example
 !.env.production.example
 .git
+.local
+**/.local
 .next
 .next-build
 .next-dev
+**/.next
+**/.next-*
 .pnpm-store
 .turbo
 apps/api/dist
@@ -17,8 +21,13 @@ apps/web/.next
 apps/web/.next-build
 apps/web/.next-dev
 coverage
+deployment-backups
+**/deployment-backups
+DEPLOYED_COMMIT
 node_modules
+**/node_modules
 playwright-report
 test-results
 tmp
+**/.wrangler
 *.tsbuildinfo
