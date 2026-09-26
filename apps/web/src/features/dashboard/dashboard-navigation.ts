@@ -8,6 +8,7 @@ export interface NavigationItem {
 
 export const primaryNavigation: NavigationItem[] = [
   { href: '/dashboard', icon: 'overview', label: '总览' },
+  { href: '/dashboard/training', icon: 'team', label: '训练中心' },
   { href: '/dashboard/camera', icon: 'camera', label: '视频识别' },
 ];
 
@@ -27,6 +28,7 @@ export const pageTitles: Record<string, string> = {
   '/dashboard/assets/holds': '岩点库',
   '/dashboard/assets/routes': '线路库',
   '/dashboard/route-setting': 'AI 定线',
+  '/dashboard/training': '运动员训练中心',
   '/dashboard/camera': '视频识别',
   ...Object.fromEntries(secondaryNavigation.map((item) => [item.href, item.label])),
 };

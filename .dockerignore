@@ -7,6 +7,8 @@
 !.env.example
 !.env.production.example
 .git
+.local
+**/.local
 .next
 .next-build
 .next-dev
