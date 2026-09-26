@@ -168,6 +168,22 @@ button { -webkit-tap-highlight-color: transparent; }
 .tianyu-wall.is-annotating { cursor: crosshair; }
 .tianyu-wall::after { z-index: 1; background: linear-gradient(120deg, rgb(255 255 255 / 5%), transparent 35%, rgb(0 0 0 / 8%)); }
 .tianyu-photo { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; pointer-events: none; }
+.tianyu-registration-overlay { z-index: 1; }
+.tianyu-registration-summary, .tianyu-registration-inspector { display: flex; flex-direction: column; gap: 6px; padding: 11px; border: 1px solid #405349; border-radius: 10px; background: #202b25; font-size: 0.72rem; line-height: 1.5; }
+.tianyu-registration-summary { margin-top: 12px; }
+.tianyu-registration-summary strong, .tianyu-registration-inspector strong { color: #8ed7b1; }
+.tianyu-registration-summary span, .tianyu-registration-inspector span { color: #d5ddd6; }
+.tianyu-registration-summary small, .tianyu-registration-inspector small { color: #9faa9f; font-size: 0.66rem; line-height: 1.5; }
+.tianyu-registration-inspector:not(.status-registered) { border-color: #6d5841; background: #2e2920; }
+.tianyu-registration-inspector:not(.status-registered) strong { color: #e6bb78; }
+.tianyu-registration-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 10px 0; color: #424a3e; font-size: 0.72rem; }
+.tianyu-registration-controls button[aria-pressed="false"] { color: #404b3c; background: #f5f3e8; border-color: #9eaa98; }
+.tianyu-registration-controls label { display: inline-flex; align-items: center; gap: 5px; }
+.tianyu-registration-controls input { width: 90px; accent-color: #ff7a45; }
+.tianyu-registration-controls small { flex-basis: 100%; color: #687260; }
+.tianyu-model-viewer { display: block; width: 100%; height: 260px; background: #e8e9e5; border-radius: 8px; }
+.tianyu-model-marker { border: 2px solid white; border-radius: 999px; padding: 3px 7px; color: white; background: #187b62; font-size: 0.7rem; }
+.tianyu-surface-preview { display: grid; gap: 6px; }
 .tianyu-board-outline { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .tianyu-board-outline polygon { fill: rgb(255 122 69 / 3%); stroke: #ff7a45; stroke-width: 0.34; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 70%)); }
 .tianyu-photo-badge { position: absolute; z-index: 8; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid rgb(255 255 255 / 22%); border-radius: 9px; color: white; background: rgb(19 21 18 / 78%); box-shadow: 0 5px 16px rgb(0 0 0 / 20%); backdrop-filter: blur(7px); pointer-events: none; }

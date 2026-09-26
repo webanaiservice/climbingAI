@@ -1166,7 +1166,7 @@ export function fixedBoardSummary(boardPlacements: FixedBoardPlacement[], holds:
       ...(node.asset.material === "现场固定板" ? {
         serial: node.asset.serial,
         visualDescription: node.asset.description,
-        attributeBasis: "照片视觉估计，非实测；GLB 未逐点配准",
+        attributeBasis: "抓型与尺寸为视觉估计，非实测；各点照片/GLB配准状态见visualDescription，扫描未覆盖、待复核或人工移动失效的点不可当作已验证三维几何",
       } : {}),
     })),
     instruction: "岩点已经安装，动作计划只能从这些安装实例中选择，不得建议新增、移动、旋转或缩放岩点。",
