@@ -110,7 +110,7 @@ export interface Workspace {
   ai: { enabled: boolean; model: string; models: { id: string; label: string }[] };
   limits: { attempts: number; sessions: number };
 }
-export type Tab = 'athletes' | 'sessions' | 'review' | 'tasks' | 'progress';
+export type { TrainingSection as Tab } from './training-navigation';
 export interface FormState {
   kind: 'athlete' | 'measurement' | 'course' | 'session' | 'attempt' | 'task' | 'retest';
   athleteId?: string;

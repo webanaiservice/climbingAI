@@ -7,5 +7,5 @@ import '../../../features/route-setting/route-setting.css';
 export default async function Page() {
   const session = await requireSession();
   if (!canUseRouteSetting(session.account.email)) notFound();
-  return <RouteSettingPage />;
+  return <RouteSettingPage key="operations" workspace="operations" />;
 }
