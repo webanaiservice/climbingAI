@@ -449,11 +449,11 @@ function tianyuHoldToAsset(point: TianyuHold): Hold {
   };
 }
 
-export default function RouteSettingPage() {
+export default function RouteSettingPage({ workspace = "operations" }: { workspace?: "operations" | "training-board" }) {
   const [payload, setPayload] = useState<HoldPayload | null>(null);
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("全部");
-  const [routeMode, setRouteMode] = useState<RouteMode>("free");
+  const [routeMode, setRouteMode] = useState<RouteMode>(workspace === "training-board" ? "tianyu" : "free");
   const [freePlacements, setFreePlacements] = useState<Placement[]>([]);
   const [fixedBoardPlacements, setFixedBoardPlacements] = useState<Placement[]>([]);
   const [tianyuHolds, setTianyuHolds] = useState<TianyuHold[]>([]);
@@ -537,6 +537,7 @@ export default function RouteSettingPage() {
   }, [routeMode]);
 
   useEffect(() => {
+    if (workspace !== "operations") return;
     fetch("/data/holds.json")
       .then((response) => {
         if (!response.ok) throw new Error("岩点数据加载失败");
@@ -579,9 +580,10 @@ export default function RouteSettingPage() {
         }
       })
       .catch(() => setPayload({ meta: { count: 0, excludedSets: 0, excludedIncomplete: 0, byMaterial: {} }, holds: [] }));
-  }, []);
+  }, [workspace]);
 
   useEffect(() => {
+    if (workspace !== "training-board") return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       let stored: StoredTianyuBoard | null = null;
@@ -654,7 +656,7 @@ export default function RouteSettingPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [workspace]);
 
   useEffect(() => {
     if (!isGenerating) return;
@@ -1364,7 +1366,7 @@ export default function RouteSettingPage() {
   }
 
   function changeRouteMode(value: string) {
-    if (isGenerating || (value !== "free" && value !== "fixed" && value !== "tianyu")) return;
+    if (workspace !== "operations" || isGenerating || (value !== "free" && value !== "fixed")) return;
     setRouteMode(value);
     setSelectedId(null);
     setSelectedTianyuId(null);
@@ -1383,22 +1385,25 @@ export default function RouteSettingPage() {
         <div className="brand-lockup">
           <div className="brand-mark" aria-hidden="true"><Grip size={20} /></div>
           <div>
-            <h1>岩馆定线台</h1>
+            <h1>{workspace === "training-board" ? "训练板定线" : "岩馆定线台"}</h1>
             <p>{routeMode === "tianyu" ? `天宇训练板 · ${tianyuAngle}°仰角` : "4 × 4 m 直壁 · 20 cm 网格"}</p>
           </div>
         </div>
         <Tabs className="mode-switch" value={routeMode} onValueChange={changeRouteMode}>
-          <TabsList aria-label="定线模式">
-            <TabsTrigger value="free" disabled={isGenerating}>自由定线</TabsTrigger>
-            <TabsTrigger value="fixed" disabled={isGenerating}>固定板定线</TabsTrigger>
-            <TabsTrigger value="tianyu" disabled={isGenerating}>天宇训练板</TabsTrigger>
+          <TabsList aria-label={workspace === "training-board" ? "训练板选择" : "定线模式"}>
+            {workspace === "operations" ? <>
+              <TabsTrigger value="free" disabled={isGenerating}>自由定线</TabsTrigger>
+              <TabsTrigger value="fixed" disabled={isGenerating}>固定板定线</TabsTrigger>
+            </> : <TabsTrigger value="tianyu" disabled={isGenerating}>天宇训练板</TabsTrigger>}
           </TabsList>
         </Tabs>
         <div className="header-status">
           <span className="status-dot" />
           AI 辅助定线
           <span className="status-divider" />
-          {payload ? `${payload.meta.count} 个独立资产` : "正在整理岩点库"}
+          {workspace === "training-board"
+            ? tianyuLoading ? "正在加载训练板" : `${tianyuHolds.length} 个已安装点位`
+            : payload ? `${payload.meta.count} 个独立资产` : "正在整理岩点库"}
         </div>
       </header>
 

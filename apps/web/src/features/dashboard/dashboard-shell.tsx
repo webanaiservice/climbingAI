@@ -1,14 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import type { AuthenticatedSession } from '../../lib/server-session';
 import { DashboardIcon } from './dashboard-icons';
 import {
-  assetNavigation,
+  trainingNavigation,
+  operationsNavigation,
+  navigationCenter,
+  navigationHref,
+  visibleNavigation,
   pageTitles,
   primaryNavigation,
   secondaryNavigation,
@@ -23,9 +27,15 @@ interface DashboardShellProps {
 
 export function DashboardShell({ children, session, routeSettingEnabled }: DashboardShellProps) {
   const pathname = usePathname();
-  const [assetsOpen, setAssetsOpen] = useState(
-    pathname.startsWith('/dashboard/assets') || pathname.startsWith('/dashboard/route-setting'),
-  );
+  const searchParams = useSearchParams();
+  const activeHref = navigationHref(pathname, searchParams.get('tab'));
+  const center = navigationCenter(pathname);
+  const [trainingOpen, setTrainingOpen] = useState(center === 'training');
+  const [operationsOpen, setOperationsOpen] = useState(center === 'operations');
+  useEffect(() => {
+    if (center === 'training') setTrainingOpen(true);
+    if (center === 'operations') setOperationsOpen(true);
+  }, [center, activeHref]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -42,12 +52,14 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
   return (
     <div className="dashboard-shell">
       <Sidebar
-        assetsOpen={assetsOpen}
+        trainingOpen={trainingOpen}
+        operationsOpen={operationsOpen}
         mobileOpen={mobileOpen}
-        pathname={pathname}
+        pathname={activeHref}
         session={session}
         routeSettingEnabled={routeSettingEnabled}
-        onAssetToggle={() => setAssetsOpen((value) => !value)}
+        onTrainingToggle={() => setTrainingOpen((value) => !value)}
+        onOperationsToggle={() => setOperationsOpen((value) => !value)}
         onNavigate={() => setMobileOpen(false)}
       />
       {mobileOpen && (
@@ -60,7 +72,7 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
       <section className="dashboard-workspace">
         <DashboardHeader
           loggingOut={loggingOut}
-          pathname={pathname}
+          pathname={activeHref}
           session={session}
           onLogout={logout}
           onMenu={() => setMobileOpen(true)}
@@ -72,12 +84,14 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
 }
 
 interface SidebarProps {
-  assetsOpen: boolean;
+  trainingOpen: boolean;
+  operationsOpen: boolean;
   mobileOpen: boolean;
   pathname: string;
   session: AuthenticatedSession;
   routeSettingEnabled: boolean;
-  onAssetToggle: () => void;
+  onTrainingToggle: () => void;
+  onOperationsToggle: () => void;
   onNavigate: () => void;
 }
 
@@ -88,7 +102,7 @@ function Sidebar(props: SidebarProps) {
         <span className="dashboard-brand-mark">↗</span>
         <span>
           <strong>Climbing</strong>
-          <small>数字化运营平台</small>
+          <small>训练与运营平台</small>
         </span>
       </Link>
       <nav className="dashboard-navigation" aria-label="看板导航">
@@ -97,12 +111,23 @@ function Sidebar(props: SidebarProps) {
           pathname={props.pathname}
           onNavigate={props.onNavigate}
         />
-        <AssetNavigation
-          open={props.assetsOpen}
+        <BusinessNavigation
+          label="训练中心"
+          icon="team"
+          items={visibleNavigation(trainingNavigation, props.routeSettingEnabled)}
+          open={props.trainingOpen}
           pathname={props.pathname}
           onNavigate={props.onNavigate}
-          onToggle={props.onAssetToggle}
-          routeSettingEnabled={props.routeSettingEnabled}
+          onToggle={props.onTrainingToggle}
+        />
+        <BusinessNavigation
+          label="运营中心"
+          icon="assets"
+          items={visibleNavigation(operationsNavigation, props.routeSettingEnabled)}
+          open={props.operationsOpen}
+          pathname={props.pathname}
+          onNavigate={props.onNavigate}
+          onToggle={props.onOperationsToggle}
         />
         <p className="navigation-label">系统管理</p>
         <NavigationList
@@ -167,20 +192,24 @@ function NavigationLink({
   );
 }
 
-function AssetNavigation({
+function BusinessNavigation({
+  label,
+  icon,
+  items,
   open,
   pathname,
   onNavigate,
   onToggle,
-  routeSettingEnabled,
 }: {
+  label: string;
+  icon: NavigationItem['icon'];
+  items: NavigationItem[];
   open: boolean;
   pathname: string;
   onNavigate: () => void;
   onToggle: () => void;
-  routeSettingEnabled: boolean;
 }) {
-  const active = pathname.startsWith('/dashboard/assets') || pathname.startsWith('/dashboard/route-setting');
+  const active = items.some((item) => item.href === pathname);
   return (
     <div className="navigation-group">
       <button
@@ -189,14 +218,14 @@ function AssetNavigation({
         aria-expanded={open}
         onClick={onToggle}
       >
-        <DashboardIcon name="assets" />
-        <span>业务模块</span>
+        <DashboardIcon name={icon} />
+        <span>{label}</span>
         <DashboardIcon className={`navigation-chevron ${open ? 'is-open' : ''}`} name="chevron" />
       </button>
       {open && (
         <div className="navigation-children">
           <NavigationList
-            items={routeSettingEnabled ? assetNavigation : assetNavigation.filter((item) => item.href !== '/dashboard/route-setting')}
+            items={items}
             pathname={pathname}
             onNavigate={onNavigate}
           />
@@ -225,7 +254,7 @@ function DashboardHeader({
         <DashboardIcon name="menu" />
       </button>
       <div>
-        <p>工作空间</p>
+        <p>{navigationCenter(pathname.split('?')[0]) === 'training' ? '训练中心 · 运动员' : navigationCenter(pathname.split('?')[0]) === 'operations' ? '运营中心 · 岩馆' : '工作空间'}</p>
         <h1>{pageTitles[pathname] ?? '攀岩馆管理'}</h1>
       </div>
       <div className="header-actions">

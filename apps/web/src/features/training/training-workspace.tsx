@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUpRight,
   BookOpen,
@@ -22,6 +23,7 @@ import { ReviewPanel } from './training-review';
 import { TrainingForm } from './training-forms';
 import { Stat } from './training-ui';
 import type { FormState, Tab, Workspace } from './training-types';
+import { trainingHref, trainingSection } from './training-navigation';
 import './training.css';
 const tabs = [
   { id: 'athletes', label: '运动员档案', icon: Users },
@@ -33,7 +35,10 @@ const tabs = [
 export function TrainingWorkspace() {
   const [data, setData] = useState<Workspace | null>(null);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('athletes');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tab = trainingSection(searchParams.get('tab'));
+  const setTab = (next: Tab) => router.push(trainingHref(next), { scroll: false });
   const [athleteFilter, setAthleteFilter] = useState('');
   const [form, setForm] = useState<FormState | null>(null);
   const [profileId, setProfileId] = useState('');
@@ -59,10 +64,10 @@ export function TrainingWorkspace() {
         <div>
           <span className="tr-overline">TRAIN WITH PURPOSE</span>
           <h2>每一攀，都更进一步。</h2>
-          <p>从一份档案，到一次复盘，再到下一次突破。</p>
+          <p>共享运动员档案，串联训练日志、视频复盘与成长记录。</p>
           <div className="tr-hero-tags">
             <span>青少年攀岩训练</span>
-            <span>星星道 / 飞鸟道</span>
+            <span>当前支持：星星道 / 飞鸟道速度训练</span>
           </div>
         </div>
         <div className="tr-hero-right">

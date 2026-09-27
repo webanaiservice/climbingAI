@@ -1,4 +1,6 @@
 import { CoreModuleCard, SectionCard, StatGrid } from '../../features/dashboard/page-components';
+import { requireSession } from '../../lib/server-session';
+import { canUseRouteSetting } from '../../lib/route-setting-access';
 
 const overviewStats = [
   {
@@ -12,63 +14,46 @@ const overviewStats = [
   { label: '试点区域', value: 'W03–W05', detail: '线路视觉定位', tone: 'warning' as const },
 ];
 
-const readiness = [
-  ['岩点库', '主线', '同款岩点只建一份档案，数量按仓库、上墙和维护状态管理'],
-  ['线路库', '主线', '线路建档、墙段位置、发布、二维码反馈和下线历史'],
-  ['W03–W05 视觉', '试点', '选择线路后保留原色岩点、显示黄色轮廓和 S/T'],
-];
-
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await requireSession();
+  const routeSettingEnabled = canUseRouteSetting(session.account.email);
   return (
     <div className="page-stack">
       <OverviewHero />
       <StatGrid items={overviewStats} />
-      <section className="overview-grid">
+      <section className="overview-grid business-centers-grid">
         <SectionCard
-          title="核心模块"
-          description="连接岩点资产、线路运营与运动员训练，让日常记录形成持续积累。"
+          title="训练中心"
+          description="以运动员为主体，连接档案、训练记录与复盘。"
           className="module-section"
         >
           <div className="core-module-grid">
             <CoreModuleCard
-              href="/dashboard/assets/holds"
-              icon="holds"
-              title="岩点库"
-              description="档案、库存、照片与 3D"
-              status="客户需求"
-            />
-            <CoreModuleCard
-              href="/dashboard/assets/routes"
-              icon="routes"
-              title="线路库"
-              description="建档、视觉、反馈与复盘"
-              status="第一阶段"
-            />
-            <CoreModuleCard
               href="/dashboard/training"
               icon="team"
-              title="训练中心"
+              title="运动员训练"
               description="运动员档案、视频复盘与复测"
               status="训练闭环"
             />
+            {routeSettingEnabled && <CoreModuleCard
+              href="/dashboard/training/board-setting"
+              icon="walls"
+              title="训练板定线"
+              description="天宇板选点、AI 辅助与人工调整"
+              status="固定安装点"
+            />}
           </div>
         </SectionCard>
         <SectionCard
-          title="数字化准备度"
-          description="POC 核心模块当前交付状态。"
+          title="运营中心"
+          description="以岩馆为主体，管理岩点、线路与视频识别。"
           className="readiness-section"
         >
-          <div className="readiness-list">
-            {readiness.map(([label, status, detail]) => (
-              <article key={label}>
-                <span className="readiness-dot" />
-                <div>
-                  <strong>{label}</strong>
-                  <p>{detail}</p>
-                </div>
-                <em>{status}</em>
-              </article>
-            ))}
+          <div className="core-module-grid">
+            <CoreModuleCard href="/dashboard/assets/holds" icon="holds" title="岩点库" description="档案、库存、照片与 3D" status="岩点资产" />
+            <CoreModuleCard href="/dashboard/assets/routes" icon="routes" title="线路库" description="发布、反馈与历史线路" status="线路资产" />
+            {routeSettingEnabled && <CoreModuleCard href="/dashboard/route-setting" icon="routes" title="AI 辅助定线" description="自由定线与虚拟固定板设计" status="辅助设计" />}
+            <CoreModuleCard href="/dashboard/camera" icon="camera" title="视频识别" description="监控采集、攀爬观察与人工复核" status="运营观察" />
           </div>
         </SectionCard>
       </section>
