@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiBaseUrl, apiRequest } from '../../lib/api';
+import { modelDisplayName } from '../../lib/model-display-name';
 import { Empty, Pill } from './training-ui';
 import {
   outcomes,
@@ -624,7 +625,7 @@ function ReviewDetail({ data, attemptId, onSelect, onForm, onReload }: Props) {
                 >
                   {data.ai.models.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.label}
+                      {modelDisplayName(item.id, item.label)}
                     </option>
                   ))}
                 </select>
@@ -694,7 +695,10 @@ function ReviewDetail({ data, attemptId, onSelect, onForm, onReload }: Props) {
                 <div>
                   <h3>本次复盘</h3>
                   <small className="tr-caption">
-                    {data.ai.models.find((m) => m.id === analysis.model)?.label ?? analysis.model}
+                    {modelDisplayName(
+                      analysis.model ?? '',
+                      data.ai.models.find((m) => m.id === analysis.model)?.label,
+                    )}
                   </small>
                 </div>
                 <Pill tone={approved ? 'green' : 'amber'}>

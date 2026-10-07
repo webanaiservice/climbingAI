@@ -39,6 +39,7 @@ import { Progress } from "./ui/progress";
 import { Skeleton } from "./ui/skeleton";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
+import { modelDisplayName } from "../../lib/model-display-name";
 import {
   attachTianyuRegistration,
   mergeTianyuReview,
@@ -282,11 +283,11 @@ const tianyuPhotoQuad = {
   bottomLeft: { x: 0, y: 100 },
 };
 const routeModels: Array<{ id: RouteModel; label: string }> = [
-  { id: "claude-opus-5", label: "Claude Opus 5" },
-  { id: "claude-fable-5", label: "Claude Fable 5" },
-  { id: "gpt-5.5", label: "GPT-5.5" },
-  { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-  { id: "gpt-6-astra", label: "GPT-6 Astra" },
+  { id: "claude-opus-5", label: modelDisplayName("claude-opus-5") },
+  { id: "claude-fable-5", label: modelDisplayName("claude-fable-5") },
+  { id: "gpt-5.5", label: modelDisplayName("gpt-5.5") },
+  { id: "gpt-5.6-sol", label: modelDisplayName("gpt-5.6-sol") },
+  { id: "gpt-6-astra", label: modelDisplayName("gpt-6-astra") },
 ];
 
 function generationProgress(seconds: number, mode: RouteMode) {
