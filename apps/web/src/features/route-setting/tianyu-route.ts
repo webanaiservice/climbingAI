@@ -29,7 +29,11 @@ export type TianyuRouteSummary = Omit<SavedTianyuRoute, 'document'>;
 export function newTianyuRoute(holds: TianyuHold[], angle: number, revision: string): TianyuRouteDocument {
   return {
     version: 1, name: '未命名线路', grade: 'V4', notes: '',
-    board: { id: 'TY-01', revision, angle, holds: holds.map(({ registration: _registration, ...hold }) => ({ ...hold })) },
+    board: { id: 'TY-01', revision, angle, holds: holds.map(hold => {
+      const snapshot = { ...hold };
+      delete snapshot.registration;
+      return snapshot;
+    }) },
     points: [], moves: [], origin: { kind: 'manual' },
   };
 }
