@@ -49,8 +49,10 @@ export function TianyuRouteEditor(props: Props) {
     // Scroll only the editor pane, leaving the photograph and page in place.
     const paneBounds = panel.getBoundingClientRect();
     const pointBounds = point.getBoundingClientRect();
-    if (pointBounds.top < paneBounds.top + 100 || pointBounds.bottom > paneBounds.bottom) {
-      panel.scrollTop += pointBounds.top - paneBounds.top - 100;
+    const actionsHeight = panel.querySelector('.manual-route-actions')?.getBoundingClientRect().height ?? 84;
+    const inset = actionsHeight + 16;
+    if (pointBounds.top < paneBounds.top + inset || pointBounds.bottom > paneBounds.bottom) {
+      panel.scrollTop += pointBounds.top - paneBounds.top - inset;
     }
   }, [selectedHoldId, Boolean(editor)]);
 
