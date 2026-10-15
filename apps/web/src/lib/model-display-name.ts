@@ -1,13 +1,12 @@
-// Temporary demo aliases only; these are not the actual models being called.
-// Keep request values and stored model IDs unchanged so the display can be restored here.
+// Display names only; request values and stored model IDs stay unchanged.
 const modelDisplayNames: Record<string, string> = {
-  'claude-opus-5': 'Qwen3-235B-A22B',
-  'claude-fable-5': 'Qwen3-32B',
-  'claude-opus-5-5': 'Qwen3-Max',
-  'gpt-5.5': 'DeepSeek V3',
-  'gpt-5.6-sol': 'DeepSeek V3.1',
-  'gpt-6-astra': 'DeepSeek V3.2',
-  'gpt-6-sol': 'DeepSeek R1',
+  'claude-opus-5': 'Claude Opus 5',
+  'claude-fable-5': 'Claude Fable 5',
+  'claude-opus-5-5': 'Claude Opus 5.5',
+  'gpt-5.5': 'GPT-5.5',
+  'gpt-5.6-sol': 'GPT-5.6 Sol',
+  'gpt-6-astra': 'GPT-6 Astra',
+  'gpt-6-sol': 'GPT-6 Sol',
 };
 
 export function modelDisplayName(modelId: string, fallback = modelId): string {
