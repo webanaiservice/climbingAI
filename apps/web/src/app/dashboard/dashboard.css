@@ -26,6 +26,12 @@
   background: var(--dashboard-surface);
 }
 
+.dashboard-sidebar[hidden] { display: none; }
+.desktop-navigation-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid #d3d9d1; border-radius: 9px; background: #fff; color: #344c40; font: inherit; font-size: 12px; cursor: pointer; }
+.desktop-navigation-toggle svg { width: 17px; height: 17px; }
+@media (min-width: 761px) { .dashboard-shell.board-navigation-hidden { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .desktop-navigation-toggle { display: none; } }
+
 .dashboard-sidebar {
   position: sticky;
   top: 0;

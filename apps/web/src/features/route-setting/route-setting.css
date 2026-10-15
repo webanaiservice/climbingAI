@@ -455,3 +455,101 @@ button { -webkit-tap-highlight-color: transparent; }
   .route-app .ai-panel { display: block; }
   .route-app .candidate-list { height: auto; max-height: none; }
 }
+
+/* The training board is a dedicated workspace; free/fixed-wall layouts stay unchanged. */
+.route-app.tianyu-workspace { min-height: 0; }
+.route-app.tianyu-workspace > .app-header { display: none; }
+.route-app.tianyu-workspace .workspace-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-areas: "ai wall manual";
+  height: calc(100dvh - 74px);
+  min-height: 0;
+  overflow: hidden;
+}
+.route-app.tianyu-workspace .tianyu-tool-switch { display: none; }
+.route-app.tianyu-workspace .ai-panel,
+.route-app.tianyu-workspace .manual-panel,
+.route-app.tianyu-workspace .wall-stage {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.route-app.tianyu-workspace .ai-panel {
+  grid-area: ai;
+  display: block;
+  padding: 18px 16px;
+  border-left: 0;
+  border-top: 0;
+  border-right: 1px solid #343934;
+}
+.route-app.tianyu-workspace .ai-panel .panel-heading { margin-bottom: 16px; }
+.route-app.tianyu-workspace .candidate-list { height: auto; min-height: 0; max-height: none; overflow: visible; }
+.route-app.tianyu-workspace .manual-panel { grid-area: manual; padding: 12px; border-left: 1px solid #343934; }
+.route-app.tianyu-workspace .wall-stage { grid-area: wall; padding: 16px; }
+.route-app.tianyu-workspace .wall-frame { height: auto; min-height: 0; margin-top: 12px; }
+.route-app.tianyu-workspace .tianyu-wall { width: min(100%, calc(100dvh - 300px)); height: auto; min-height: 0; border-width: 8px; }
+.route-app.tianyu-workspace .wall-actions,
+.route-app.tianyu-workspace .tianyu-board-controls { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+.route-app.tianyu-workspace .wall-metrics { justify-content: flex-start; }
+.route-app.tianyu-workspace .wall-metrics span:last-child { display: inline; }
+.route-app.tianyu-workspace .manual-route-editor { margin: 0; padding: 12px; }
+.route-app.tianyu-workspace .manual-route-form { padding: 10px; }
+.route-app.tianyu-workspace .manual-route-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.route-app.tianyu-workspace .manual-route-fields > label:first-child { grid-column: 1 / -1; }
+.route-app.tianyu-workspace .manual-route-controls label { white-space: nowrap; }
+.route-app.tianyu-workspace .manual-route-controls input[type="checkbox"] { flex: 0 0 auto; width: auto; }
+.route-app.tianyu-workspace .manual-route-actions {
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px -3px;
+  padding: 10px 3px;
+  border-block: 1px solid #d1d5c7;
+  background: #faf8f0;
+}
+.route-app.tianyu-workspace .manual-route-actions > button:first-child { color: #fff; border-color: #3c642e; background: #3c642e; }
+.route-app.tianyu-workspace .manual-route-moves > li { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr); padding: 8px; }
+.route-app.tianyu-workspace .manual-route-moves > li > select:nth-of-type(3) { grid-column: 2 / -1; }
+.route-app.tianyu-workspace .manual-route-library li { flex-wrap: wrap; overflow-wrap: anywhere; }
+.route-app.tianyu-workspace .tianyu-board-maintenance { margin-top: 18px; padding-top: 14px; border-top: 1px solid #414741; }
+.route-app.tianyu-workspace .tianyu-board-maintenance > summary { cursor: pointer; color: #a9b5a7; font-size: .78rem; line-height: 1.5; }
+.route-app.tianyu-workspace .tianyu-board-maintenance > .library-panel { padding: 18px 0 0; border: 0; }
+
+@container (max-width: 1179px) {
+  .route-app.tianyu-workspace .workspace-grid {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "switch switch" "wall tools";
+  }
+  .route-app.tianyu-workspace .tianyu-tool-switch {
+    grid-area: switch;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #343934;
+    background: #1d201e;
+  }
+  .route-app.tianyu-workspace .tianyu-tool-switch button { padding: 7px 12px; border: 1px solid #4c554b; border-radius: 7px; color: #dce5d8; background: transparent; cursor: pointer; font-size: .8rem; }
+  .route-app.tianyu-workspace .tianyu-tool-switch button[aria-pressed="true"] { border-color: #ff957b; color: #ffad99; background: #392a24; }
+  .route-app.tianyu-workspace .ai-panel,
+  .route-app.tianyu-workspace .manual-panel { grid-area: tools; border-right: 0; border-left: 1px solid #343934; }
+  .route-app.tianyu-workspace[data-active-tool="ai"] .manual-panel,
+  .route-app.tianyu-workspace[data-active-tool="manual"] .ai-panel { display: none; }
+}
+
+@container (max-width: 780px) {
+  .route-app.tianyu-workspace .workspace-grid { display: flex; height: auto; overflow: visible; }
+  .route-app.tianyu-workspace .tianyu-tool-switch { order: 0; justify-content: center; }
+  .route-app.tianyu-workspace .wall-stage { order: 1; height: auto; overflow: visible; padding: 14px 10px; }
+  .route-app.tianyu-workspace .ai-panel,
+  .route-app.tianyu-workspace .manual-panel { order: 2; height: auto; max-height: 75dvh; border-left: 0; border-top: 1px solid #343934; }
+  .route-app.tianyu-workspace .tianyu-wall { width: 100%; }
+  .route-app.tianyu-workspace .wall-actions { align-items: flex-start; }
+}

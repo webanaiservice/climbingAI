@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { modelDisplayName } from '../../lib/model-display-name';
 import type { TianyuHold } from './tianyu-board';
@@ -33,6 +33,7 @@ export function TianyuRouteEditor(props: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const selectedPointRef = useRef<HTMLDivElement>(null);
   const setWorking = (value: boolean) => { setBusy(value); props.onBusyChange(value); };
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -41,6 +42,17 @@ export function TianyuRouteEditor(props: Props) {
     finally { if (!signal?.aborted) setLoading(false); }
   }, []);
   useEffect(() => { const abort = new AbortController(); void reload(abort.signal); return () => abort.abort(); }, [reload]);
+  useEffect(() => {
+    const point = selectedPointRef.current;
+    const panel = point?.closest<HTMLElement>('.manual-panel');
+    if (!point || !panel || !selectedHoldId) return;
+    // Scroll only the editor pane, leaving the photograph and page in place.
+    const paneBounds = panel.getBoundingClientRect();
+    const pointBounds = point.getBoundingClientRect();
+    if (pointBounds.top < paneBounds.top + 100 || pointBounds.bottom > paneBounds.bottom) {
+      panel.scrollTop += pointBounds.top - paneBounds.top - 100;
+    }
+  }, [selectedHoldId, Boolean(editor)]);
 
   const doc = editor?.document;
   const selected = doc?.points.find(p => p.holdId === selectedHoldId);
@@ -85,6 +97,12 @@ export function TianyuRouteEditor(props: Props) {
         setError(null); setNotice(null); props.onOpen({ dirty: true, document: newTianyuRoute(props.holds, props.angle, props.boardRevision) });
       }}>新建手工线路</button>
     </div>
+    {editor && doc && <div className="manual-route-actions" aria-label="线路保存操作">
+      <button type="button" disabled={busy || props.disabled || !doc.points.length || !doc.name.trim() || !doc.grade.trim()} onClick={() => void save()}>保存线路草稿</button>
+      {editor.id && <button type="button" disabled={busy || props.disabled || !doc.points.length || !doc.name.trim() || !doc.grade.trim()} onClick={() => void save(true)}>另存为新线路</button>}
+      <button type="button" disabled={busy || props.disabled} onClick={() => { if (mayLeave()) props.onChange(null); }}>结束线路编辑</button>
+      <button type="button" disabled={busy || props.disabled} onClick={() => { if (window.confirm('只清空当前线路的用点和动作，不删除板面岩点。确定继续吗？')) change({ ...doc, points: [], moves: [] }); }}>清空线路用点</button>
+    </div>}
     {error && <p className="manual-route-error" role="alert">{error}</p>}
     {notice && <p className="manual-route-notice" role="status">{notice}</p>}
     {editor && doc && <fieldset disabled={busy || props.disabled} className="manual-route-form">
@@ -98,7 +116,7 @@ export function TianyuRouteEditor(props: Props) {
         </select></label>
       </div>
       <p className="manual-route-caption">点击板上岩点即可加入线路，再设置用途。重复点击只选中，不会误删；板面坐标保持锁定。共 {doc.points.length} 个独立点、{doc.moves.length} 个手部动作。</p>
-      {selectedHoldId && holdById.has(selectedHoldId) && <div className="manual-route-point" aria-label="当前线路点编辑">
+      {selectedHoldId && holdById.has(selectedHoldId) && <div ref={selectedPointRef} className="manual-route-point" aria-label="当前线路点编辑">
         <strong>{holdById.get(selectedHoldId)!.serial}</strong>
         {!selected ? <button type="button" onClick={() => change(addRoutePoint(doc, selectedHoldId))}>加入线路</button> : <>
           <div className="manual-route-controls">
@@ -140,14 +158,8 @@ export function TianyuRouteEditor(props: Props) {
       <label>定线说明／调整理由<textarea aria-label="定线说明" value={doc.notes} maxLength={3000} rows={2} onChange={e => change({ ...doc, notes: e.target.value })} /></label>
       {warnings.length > 0 && <div className="manual-route-warnings"><strong>可先保存草稿，以下项目待完善：</strong><ul>{warnings.map(w => <li key={w}>{w}</li>)}</ul></div>}
       <p className="manual-route-caption">以上仅检查信息完整性，不代表动作可达、等级准确或线路安全；必须人工检查和试爬。</p>
-      <div className="manual-route-controls">
-        <button type="button" disabled={!doc.points.length || !doc.name.trim() || !doc.grade.trim()} onClick={() => void save()}>保存线路草稿</button>
-        {editor.id && <button type="button" disabled={!doc.points.length || !doc.name.trim() || !doc.grade.trim()} onClick={() => void save(true)}>另存为新线路</button>}
-        <button type="button" onClick={() => { if (window.confirm('只清空当前线路的用点和动作，不删除板面岩点。确定继续吗？')) change({ ...doc, points: [], moves: [] }); }}>清空线路用点</button>
-        <button type="button" onClick={() => { if (mayLeave()) props.onChange(null); }}>结束线路编辑</button>
-      </div>
     </fieldset>}
-    <details className="manual-route-library" open><summary>服务器线路草稿库 · 最近 100 条 · {rows.length} 条</summary>
+    <details className="manual-route-library" open={!editor}><summary>服务器线路草稿库 · 最近 100 条 · {rows.length} 条</summary>
       <p className="manual-route-caption">按当前岩馆隔离，包含板面快照与角度，可跨设备打开；打开不会覆盖浏览器中已保存的板面。</p>
       <button type="button" disabled={loading || busy} onClick={() => { setError(null); void reload(); }}>刷新线路库</button>
       {loading ? <p role="status">正在读取线路…</p> : rows.length === 0 ? <p>尚未保存线路。</p> : <ul>{rows.map(row => <li key={row.id}>
