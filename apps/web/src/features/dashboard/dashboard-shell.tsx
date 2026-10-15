@@ -41,7 +41,10 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
   const isBoardWorkspace = pathname === '/dashboard/training/board-setting';
   const navigationHidden = isBoardWorkspace && boardNavigationHidden;
   useEffect(() => {
-    try { setBoardNavigationHidden(window.localStorage.getItem('climbing.training-board.navigation-hidden.v1') === 'true'); }
+    try {
+      const saved = window.localStorage.getItem('climbing.training-board.navigation-hidden.v1');
+      setBoardNavigationHidden(saved === null ? window.matchMedia('(any-pointer: coarse) and (min-width: 700px) and (max-width: 1400px)').matches : saved === 'true');
+    }
     catch { /* Display preferences must not block navigation. */ }
     const desktop = window.matchMedia('(min-width: 761px)');
     const closeMobile = () => { if (desktop.matches) setMobileOpen(false); };

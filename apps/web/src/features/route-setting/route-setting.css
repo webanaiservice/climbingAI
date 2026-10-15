@@ -436,9 +436,10 @@ button { -webkit-tap-highlight-color: transparent; }
   padding: 0;
   min-width: 0;
   container-type: inline-size;
+  container-name: route-workspace;
 }
 
-@container (max-width: 990px) {
+@container route-workspace (max-width: 990px) {
   .route-app .workspace-grid { grid-template-columns: 270px minmax(0, 1fr); }
   .route-app .ai-panel { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(240px, 0.7fr) minmax(360px, 1.3fr); gap: 18px; border-top: 1px solid #343934; border-left: 0; }
   .route-app .ai-panel .panel-heading { grid-column: 1 / -1; margin-bottom: 0; }
@@ -446,7 +447,7 @@ button { -webkit-tap-highlight-color: transparent; }
   .route-app .climbing-wall { width: min(100%, calc(100vh - 188px)); }
 }
 
-@container (max-width: 780px) {
+@container route-workspace (max-width: 780px) {
   .route-app .workspace-grid { display: flex; flex-direction: column; }
   .route-app .library-panel { border-right: 0; border-bottom: 1px solid #343934; }
   .route-app .hold-list { height: auto; min-height: 0; max-height: 330px; }
@@ -521,7 +522,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .route-app.tianyu-workspace .tianyu-board-maintenance > summary { cursor: pointer; color: #a9b5a7; font-size: .78rem; line-height: 1.5; }
 .route-app.tianyu-workspace .tianyu-board-maintenance > .library-panel { padding: 18px 0 0; border: 0; }
 
-@container (max-width: 1179px) {
+@container route-workspace (max-width: 1179px) {
   .route-app.tianyu-workspace .workspace-grid {
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-rows: auto minmax(0, 1fr);
@@ -542,9 +543,12 @@ button { -webkit-tap-highlight-color: transparent; }
   .route-app.tianyu-workspace .manual-panel { grid-area: tools; border-right: 0; border-left: 1px solid #343934; }
   .route-app.tianyu-workspace[data-active-tool="ai"] .manual-panel,
   .route-app.tianyu-workspace[data-active-tool="manual"] .ai-panel { display: none; }
+  .route-app.tianyu-workspace[data-tools-collapsed="true"] .workspace-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "switch" "wall"; }
+  .route-app.tianyu-workspace[data-tools-collapsed="true"] .ai-panel,
+  .route-app.tianyu-workspace[data-tools-collapsed="true"] .manual-panel { display: none; }
 }
 
-@container (max-width: 780px) {
+@container route-workspace (max-width: 780px) {
   .route-app.tianyu-workspace .workspace-grid { display: flex; height: auto; overflow: visible; }
   .route-app.tianyu-workspace .tianyu-tool-switch { order: 0; justify-content: center; }
   .route-app.tianyu-workspace .wall-stage { order: 1; height: auto; overflow: visible; padding: 14px 10px; }
@@ -552,4 +556,83 @@ button { -webkit-tap-highlight-color: transparent; }
   .route-app.tianyu-workspace .manual-panel { order: 2; height: auto; max-height: 75dvh; border-left: 0; border-top: 1px solid #343934; }
   .route-app.tianyu-workspace .tianyu-wall { width: 100%; }
   .route-app.tianyu-workspace .wall-actions { align-items: flex-start; }
+}
+
+/* Keep picking active on the photo, without painting every catalogued point. */
+.route-app.tianyu-workspace .tianyu-wall { touch-action: manipulation; -webkit-touch-callout: none; }
+.route-app.tianyu-workspace .tianyu-wall.is-annotating { touch-action: none; }
+.route-app.tianyu-workspace .tianyu-wall:not(.is-annotating) .tianyu-hotspot { pointer-events: none; }
+.route-app.tianyu-workspace .tianyu-wall:not(.show-point-markers) .tianyu-hotspot:not(.route-active):not(.selected):not(:focus-visible) { opacity: 0; }
+.route-app.tianyu-workspace .tianyu-wall:not(.show-point-markers) .hotspot-core { display: none; }
+.route-app.tianyu-workspace .tianyu-wall:not(.show-point-markers) .tianyu-hotspot.selected:not(.route-active),
+.route-app.tianyu-workspace .tianyu-wall:not(.show-point-markers) .tianyu-hotspot:focus-visible:not(.route-active) { width: 26px; height: 26px; opacity: 1; border: 2px solid #fff; background: transparent; box-shadow: 0 0 0 2px #286cd0; transform: translate(-50%, -50%); }
+.route-app.tianyu-workspace .tianyu-wall.hide-route-markers:not(.show-point-markers) .tianyu-hotspot:not(:focus-visible) { opacity: 0; }
+.route-app.tianyu-workspace .tianyu-tool-switch button { touch-action: manipulation; }
+
+/* The photo fits its remaining space, rather than a guessed viewport offset. */
+@container route-workspace (min-width: 781px) {
+  .route-app.tianyu-workspace .wall-stage { display: flex; flex-direction: column; overflow: hidden; }
+  .route-app.tianyu-workspace .wall-stage > :not(.wall-frame) { flex-shrink: 0; }
+  .route-app.tianyu-workspace .wall-frame { flex: 1 1 0; min-height: 120px; container-type: size; }
+  .route-app.tianyu-workspace .tianyu-wall { width: min(100cqw, 100cqh); max-width: 100%; }
+  .route-app.tianyu-workspace .route-point-list[open] .route-point-items { max-height: 140px; }
+}
+
+/* iPad / tablet: landscape editing rail, portrait bottom pane, or full-board view. */
+@media (any-pointer: coarse) and (min-width: 700px) and (max-width: 1400px) {
+  .dashboard-header:has(.desktop-navigation-toggle) { padding-inline: 16px; gap: 12px; }
+  .desktop-navigation-toggle { min-height: 44px; }
+  .route-app.tianyu-workspace .workspace-grid {
+    display: grid;
+    height: calc(100dvh - 74px);
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: 54px minmax(0, 1fr);
+    grid-template-areas: "switch switch" "wall tools";
+    overflow: hidden;
+  }
+  .route-app.tianyu-workspace .tianyu-tool-switch { grid-area: switch; display: flex; justify-content: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid #343934; background: #1d201e; }
+  .route-app.tianyu-workspace .tianyu-tool-switch button { min-height: 44px; padding: 7px 14px; border: 1px solid #4c554b; border-radius: 7px; color: #dce5d8; background: transparent; font-size: 14px; cursor: pointer; }
+  .route-app.tianyu-workspace .tianyu-tool-switch button[aria-pressed="true"] { border-color: #ff957b; color: #ffad99; background: #392a24; }
+  .route-app.tianyu-workspace .ai-panel,
+  .route-app.tianyu-workspace .manual-panel { grid-area: tools; order: initial; height: 100%; max-height: none; border-left: 1px solid #343934; border-top: 0; overflow: auto; -webkit-overflow-scrolling: touch; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .route-app.tianyu-workspace[data-active-tool="ai"] .manual-panel,
+  .route-app.tianyu-workspace[data-active-tool="manual"] .ai-panel { display: none; }
+  .route-app.tianyu-workspace .wall-stage { grid-area: wall; order: initial; display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 8px 10px; overflow: hidden; }
+  .route-app.tianyu-workspace .wall-stage > :not(.wall-frame) { flex-shrink: 0; }
+  .route-app.tianyu-workspace .wall-toolbar { gap: 6px; margin-bottom: 4px; }
+  .route-app.tianyu-workspace .wall-toolbar .eyebrow { display: none; }
+  .route-app.tianyu-workspace .wall-toolbar h2 { font-size: 14px; }
+  .route-app.tianyu-workspace .wall-metrics { display: none; }
+  .route-app.tianyu-workspace .wall-actions { gap: 6px; }
+  .route-app.tianyu-workspace .tianyu-board-controls { gap: 6px; }
+  .route-app.tianyu-workspace .wall-actions button,
+  .route-app.tianyu-workspace .tianyu-board-controls [data-slot="select-trigger"] { min-height: 44px; }
+  .route-app.tianyu-workspace .route-display-controls { margin: 4px 0 0; padding: 5px 8px; gap: 3px 8px; }
+  .route-app.tianyu-workspace .route-legend { gap: 8px; }
+  .route-app.tianyu-workspace .route-display-controls > label { min-height: 30px; white-space: nowrap; }
+  .route-app.tianyu-workspace .route-focus-summary { min-height: 22px; padding-top: 3px; overflow: hidden; }
+  .route-app.tianyu-workspace .route-focus-summary > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route-app.tianyu-workspace .wall-frame { flex: 1 1 0; min-height: 120px; margin-top: 6px; container-type: size; }
+  .route-app.tianyu-workspace .tianyu-wall { width: min(100cqw, 100cqh); max-width: 100%; border-width: 5px; }
+  .route-app.tianyu-workspace .route-point-list { margin-top: 6px; padding: 6px 10px; }
+  .route-app.tianyu-workspace .route-point-list:not([open]) summary span { display: none; }
+  .route-app.tianyu-workspace .route-point-list[open] .route-point-items { max-height: 100px; }
+  .route-app.tianyu-workspace .route-start-note,
+  .route-app.tianyu-workspace .safety-note { display: none; }
+  .route-app.tianyu-workspace .manual-route-editor button,
+  .route-app.tianyu-workspace .manual-route-controls label,
+  .route-app.tianyu-workspace .generate-button,
+  .route-app.tianyu-workspace .model-picker [data-slot="select-trigger"] { min-height: 44px; }
+  .route-app.tianyu-workspace .manual-route-editor :is(input:not([type="checkbox"]), select, textarea),
+  .route-app.tianyu-workspace .prompt-box textarea { min-height: 44px; font-size: 16px; }
+  .route-app.tianyu-workspace .manual-route-controls input[type="checkbox"] { width: 20px; height: 20px; }
+  .route-app.tianyu-workspace[data-tools-collapsed="true"] .workspace-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: 54px minmax(0, 1fr); grid-template-areas: "switch" "wall"; }
+  .route-app.tianyu-workspace[data-tools-collapsed="true"] .ai-panel,
+  .route-app.tianyu-workspace[data-tools-collapsed="true"] .manual-panel { display: none; }
+}
+
+@media (any-pointer: coarse) and (min-width: 700px) and (max-width: 1400px) and (orientation: portrait) {
+  .route-app.tianyu-workspace:not([data-tools-collapsed="true"]) .workspace-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: 54px minmax(0, 1fr) minmax(260px, 30%); grid-template-areas: "switch" "wall" "tools"; }
+  .route-app.tianyu-workspace .manual-panel,
+  .route-app.tianyu-workspace .ai-panel { border-left: 0; border-top: 1px solid #343934; }
 }
