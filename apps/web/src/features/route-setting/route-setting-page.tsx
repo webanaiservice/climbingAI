@@ -40,6 +40,8 @@ import { Skeleton } from "./ui/skeleton";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { modelDisplayName } from "../../lib/model-display-name";
+import { TianyuRouteEditor } from "./tianyu-route-editor";
+import { addRoutePoint, newTianyuRoute, routeFromCandidate, type TianyuRouteEditorState } from "./tianyu-route";
 import {
   attachTianyuRegistration,
   mergeTianyuReview,
@@ -108,6 +110,9 @@ type Placement = {
 };
 
 type Candidate = {
+  sourceModel?: RouteModel;
+  sourcePrompt?: string;
+  generationSource?: 'ai' | 'local-fallback';
   id: string;
   mode: RouteMode;
   title: string;
@@ -149,6 +154,7 @@ type CandidateMetrics = {
     gradeFit?: boolean;
   };
   beta: Array<{
+    targetInstanceId?: string;
     step: number;
     hand: "left" | "right";
     moveCm: number;
@@ -465,6 +471,8 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   const [tianyuAngle, setTianyuAngle] = useState(30);
   const [tianyuAnnotating, setTianyuAnnotating] = useState(false);
   const [selectedTianyuId, setSelectedTianyuId] = useState<string | null>(null);
+  const [tianyuEditor, setTianyuEditor] = useState<TianyuRouteEditorState | null>(null);
+  const [tianyuRouteBusy, setTianyuRouteBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRouteNumbers, setShowRouteNumbers] = useState(false);
   const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
@@ -696,6 +704,37 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
     [tianyuHolds],
   );
   const tianyuPendingCount = tianyuHolds.length - confirmedTianyuHolds.length;
+  const displayedTianyuAngle = tianyuEditor?.document.board.angle ?? tianyuAngle;
+
+  useEffect(() => {
+    if (!tianyuEditor?.dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    const guardLink = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!(link instanceof HTMLAnchorElement) || link.target === '_blank' || link.href === window.location.href || link.getAttribute('href')?.startsWith('#')) return;
+      if (!window.confirm('当前线路有未保存的更改，确定离开吗？')) { event.preventDefault(); event.stopPropagation(); }
+    };
+    window.addEventListener('beforeunload', warn);
+    document.addEventListener('click', guardLink, true);
+    return () => { window.removeEventListener('beforeunload', warn); document.removeEventListener('click', guardLink, true); };
+  }, [tianyuEditor?.dirty]);
+
+  const manualTianyuPlacements = useMemo<Placement[]>(() => {
+    if (!tianyuEditor) return [];
+    const { points, moves, board } = tianyuEditor.document;
+    const holds = new Map(board.holds.map(point => [point.id, point]));
+    return points.flatMap((point, index) => {
+      const hold = holds.get(point.holdId);
+      if (!hold) return [];
+      const firstMove = moves.findIndex(move => move.holdId === point.holdId);
+      const handStart = point.startLimbs.some(limb => limb === 'LH' || limb === 'RH');
+      return [{ instanceId: hold.id, hold: tianyuHoldToAsset(hold), x: hold.x, y: hold.y, rotation: 0, scale: 1,
+        role: handStart ? 'start' : point.roles.includes('finish') ? 'finish' : point.roles.includes('move') ? 'move' : 'foot',
+        roles: point.roles, startLimbs: point.startLimbs, step: point.startLimbs.length ? 0 : firstMove >= 0 ? firstMove + 1 : index + 1,
+        hand: firstMove >= 0 ? moves[firstMove].hand : handStart ? 'both' : undefined,
+        routeColor: '#ff5a36' } satisfies Placement];
+    });
+  }, [tianyuEditor]);
 
   const activeBoardCandidate = useMemo(
     () => routeMode !== "free" ? candidates.find((item) => item.id === activeCandidateId) ?? null : null,
@@ -708,18 +747,19 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   );
   const routeListPoints = useMemo(() => uniqueRoutePoints(routeMode === "free"
     ? freePlacements.filter((point) => point.role !== "manual")
-    : activeBoardCandidate?.placements ?? [])
+    : routeMode === "tianyu" && tianyuEditor ? manualTianyuPlacements : activeBoardCandidate?.placements ?? [])
     .sort((a, b) => Number(visualRole(b) === "start") - Number(visualRole(a) === "start") || (a.step ?? 0) - (b.step ?? 0)),
-  [activeBoardCandidate, freePlacements, routeMode]);
+  [activeBoardCandidate, freePlacements, routeMode, manualTianyuPlacements, tianyuEditor]);
   const routeNumberById = useMemo(() => new Map(routeListPoints.map((point, index) => [point.instanceId, index + 1])), [routeListPoints]);
   const focusedRouteId = hoveredRouteId ?? (routeMode === "tianyu" ? selectedTianyuId : selectedId);
   const focusedRoutePoint = routeListPoints.find((point) => point.instanceId === focusedRouteId);
 
   const activeFixedCandidate = routeMode === "fixed" ? activeBoardCandidate : null;
   const activeTianyuCandidate = routeMode === "tianyu" ? activeBoardCandidate : null;
+  const tianyuRouteVisible = Boolean(tianyuEditor || activeTianyuCandidate);
   const activeTianyuRouteByInstance = useMemo(
-    () => new Map((activeTianyuCandidate?.placements ?? []).map((placement) => [placement.instanceId, placement])),
-    [activeTianyuCandidate],
+    () => new Map((tianyuEditor ? manualTianyuPlacements : activeTianyuCandidate?.placements ?? []).map((placement) => [placement.instanceId, placement])),
+    [activeTianyuCandidate, manualTianyuPlacements, tianyuEditor],
   );
 
   const displayPlacements = useMemo(() => {
@@ -812,6 +852,10 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   const generateFromPrompt = useCallback(
     async (text = prompt) => {
       const requestMode = routeMode;
+      if (requestMode === 'tianyu' && tianyuEditor) {
+        updateModeSession('tianyu', { generationError: '请先保存并结束当前线路编辑，再生成新的 AI 候选。' });
+        return [];
+      }
       const catalog = requestMode === "tianyu"
         ? confirmedTianyuHolds.map(tianyuHoldToAsset)
         : payload?.holds ?? [];
@@ -892,6 +936,9 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
         const generationId = Date.now();
         const next = result.candidates.map((candidate, candidateIndex) => ({
           id: `ai-${requestMode}-${generationId}-${candidateIndex}`,
+          sourceModel: result.model,
+          sourcePrompt: text,
+          generationSource: result.source ?? 'ai',
           mode: requestMode,
           title: candidate.title,
           subtitle: candidate.subtitle,
@@ -945,10 +992,16 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
         setIsGenerating(false);
       }
     },
-    [confirmedTianyuHolds, fixedBoardPlacements, isGenerating, model, payload, prompt, routeMode, setPrompt, tianyuAngle, tianyuVerticalCoverage, updateModeSession],
+    [confirmedTianyuHolds, fixedBoardPlacements, isGenerating, model, payload, prompt, routeMode, setPrompt, tianyuAngle, tianyuVerticalCoverage, updateModeSession, tianyuEditor],
   );
 
   const applyCandidate = useCallback((candidate: Candidate) => {
+    if (candidate.mode === 'tianyu' && tianyuRouteBusy) return;
+    if (candidate.mode === 'tianyu') {
+      if (tianyuEditor?.dirty && !window.confirm('当前线路有未保存的更改，确定放弃并采用此 AI 候选吗？')) return;
+      setTianyuAnnotating(false);
+      setTianyuEditor({ dirty: true, document: routeFromCandidate(tianyuHolds, tianyuAngle, tianyuReviewRevision, candidate, candidate.sourceModel ?? model, candidate.sourcePrompt ?? prompt, candidate.generationSource) });
+    }
     if (candidate.mode === "free") setFreePlacements(candidate.placements);
     updateModeSession(candidate.mode, {
       activeCandidateId: candidate.id,
@@ -957,7 +1010,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
     setSelectedId(null);
     setSelectedTianyuId(null);
     setHoveredRouteId(null);
-  }, [updateModeSession]);
+  }, [updateModeSession, tianyuEditor, tianyuHolds, tianyuAngle, model, prompt, tianyuRouteBusy]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -1032,6 +1085,32 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
     });
     return () => lifecycle.abort();
   }, [activeCandidateId, applyCandidate, candidates, currentPointCount, generateFromPrompt, routeMode, selectedPlacement, selectedTianyuHold]);
+
+  function openTianyuRoute(state: TianyuRouteEditorState) {
+    if (tianyuEditor?.dirty && !window.confirm('当前线路有未保存更改，确定放弃并打开另一条线路吗？')) return;
+    if (state.id && tianyuDirty && !window.confirm('当前板面有未保存更改。打开线路会载入它保存时的板面快照，但不覆盖本机已保存的板面。确定继续吗？')) return;
+    if (state.id) {
+      const holds = normalizeTianyuHolds(state.document.board.holds);
+      setTianyuHolds(tianyuRegistration ? attachTianyuRegistration(holds, tianyuRegistration) : holds);
+      setTianyuAngle(state.document.board.angle);
+      setTianyuDirty(true);
+      setTianyuStorageMessage('正在使用该线路保存时的板面快照；本机已保存的板面没有改变。');
+    }
+    setTianyuAnnotating(false);
+    setSelectedTianyuId(null);
+    setTianyuEditor(state);
+    updateModeSession('tianyu', { activeCandidateId: null, manualReviewRequired: true, generationError: null });
+  }
+
+  function selectTianyuRoutePoint(point: TianyuHold) {
+    if (tianyuRouteBusy) return;
+    setSelectedTianyuId(point.id);
+    setTianyuEditor(current => {
+      if (!current) return current;
+      const next = addRoutePoint(current.document, point.id);
+      return next === current.document ? current : { ...current, dirty: true, document: next };
+    });
+  }
 
   function handleDrop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -1118,6 +1197,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   }
 
   function clearRoute() {
+    if (routeMode === 'tianyu' && (tianyuEditor || isGenerating)) return;
     if (routeMode === "tianyu" && tianyuLoading) return;
     if (routeMode === "tianyu") {
       setTianyuHolds([]);
@@ -1160,7 +1240,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   }
 
   function addTianyuHold(point: Point2D) {
-    if (tianyuLoading) return;
+    if (tianyuLoading || tianyuEditor || isGenerating) return;
     const index = tianyuHolds.reduce((maximum, item) => {
       const value = Number(item.serial.match(/(\d+)$/)?.[1] ?? 0);
       return Math.max(maximum, value);
@@ -1183,7 +1263,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   }
 
   function updateTianyuHold(id: string, patch: Partial<TianyuHold>) {
-    if (tianyuLoading) return;
+    if (tianyuLoading || tianyuEditor || isGenerating) return;
     setTianyuHolds((current) => current.map((item) => item.id === id ? { ...item, ...patch, humanEdited: true, confirmed: true } : item));
     invalidateTianyuBoard();
   }
@@ -1205,13 +1285,14 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   }
 
   function removeTianyuHold(id: string) {
-    if (tianyuLoading) return;
+    if (tianyuLoading || tianyuEditor || isGenerating) return;
     setTianyuHolds((current) => current.filter((item) => item.id !== id));
     setSelectedTianyuId(null);
     invalidateTianyuBoard();
   }
 
   function handleTianyuPhotoClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (tianyuEditor) { setSelectedTianyuId(null); return; }
     if (!tianyuAnnotating) {
       setSelectedTianyuId(null);
       return;
@@ -1234,7 +1315,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
     event.stopPropagation();
     event.currentTarget.focus();
     setSelectedTianyuId(point.id);
-    if (!tianyuAnnotating) return;
+    if (!tianyuAnnotating || tianyuEditor || isGenerating) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     tianyuDragRef.current = { id: point.id, pointerId: event.pointerId };
   }
@@ -1258,7 +1339,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   }
 
   function changeTianyuAngle(value: string) {
-    if (tianyuLoading) return;
+    if (tianyuLoading || tianyuEditor) return;
     const next = Number(value);
     if (!Number.isFinite(next)) return;
     setTianyuAngle(next);
@@ -1266,7 +1347,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
   }
 
   function saveTianyuBoard() {
-    if (tianyuLoading) return;
+    if (tianyuLoading || tianyuEditor) return;
     const savedAt = new Date().toISOString();
     const stored: StoredTianyuBoard = {
       version: 2,
@@ -1387,7 +1468,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
           <div className="brand-mark" aria-hidden="true"><Grip size={20} /></div>
           <div>
             <h1>{workspace === "training-board" ? "训练板定线" : "岩馆定线台"}</h1>
-            <p>{routeMode === "tianyu" ? `天宇训练板 · ${tianyuAngle}°仰角` : "4 × 4 m 直壁 · 20 cm 网格"}</p>
+            <p>{routeMode === "tianyu" ? `天宇训练板 · ${displayedTianyuAngle}°仰角` : "4 × 4 m 直壁 · 20 cm 网格"}</p>
           </div>
         </div>
         <Tabs className="mode-switch" value={routeMode} onValueChange={changeRouteMode}>
@@ -1430,7 +1511,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               <Button
                 className={tianyuAnnotating ? "annotation-toggle active" : "annotation-toggle"}
                 variant="outline"
-                disabled={tianyuLoading}
+                disabled={tianyuLoading || Boolean(tianyuEditor) || isGenerating}
                 onClick={() => setTianyuAnnotating((current) => !current)}
               >
                 <MousePointer2 size={16} />
@@ -1438,10 +1519,10 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               </Button>
 
               <div className="tianyu-seed-actions">
-                {tianyuPendingCount > 0 && <Button variant="outline" size="sm" onClick={confirmAllTianyuHolds}>
+                {tianyuPendingCount > 0 && <Button variant="outline" size="sm" onClick={confirmAllTianyuHolds} disabled={Boolean(tianyuEditor) || isGenerating}>
                   <Check size={14} />确认剩余点位
                 </Button>}
-                <Button variant="outline" size="sm" onClick={() => setRestoreTianyuDialogOpen(true)} disabled={tianyuAutoSeed.length === 0}>
+                <Button variant="outline" size="sm" onClick={() => setRestoreTianyuDialogOpen(true)} disabled={tianyuAutoSeed.length === 0 || Boolean(tianyuEditor) || isGenerating}>
                   <RotateCcw size={14} />恢复 GPT-6 复核版
                 </Button>
               </div>
@@ -1459,7 +1540,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                 </div>
               </div>
 
-              {selectedTianyuHold ? (
+              {selectedTianyuHold && !tianyuEditor ? (
                 <div className="tianyu-inspector">
                   <div className="inspector-title">
                     <div><span>所选点位</span><strong>{selectedTianyuHold.serial}</strong></div>
@@ -1525,8 +1606,8 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                 </div>
               ) : (
                 <div className="tianyu-selection-help">
-                  <strong>{tianyuBoardReady ? "点位已确认，可直接定线" : "保留完整手工编辑能力"}</strong>
-                  <span>点击点位查看颜色、外形和用途。开启手工修改后可拖动、用方向键微调、删除或补点；修改后仍为已确认状态，保存后下次继续使用。</span>
+                  <strong>{tianyuEditor ? '手工线路编辑中 · 板面锁定' : tianyuBoardReady ? "点位已确认，可直接定线" : "保留完整手工编辑能力"}</strong>
+                  <span>{tianyuEditor ? '点击板上岩点加入线路，在照片下方设置起步、用途和动作顺序。移除线路用点不会删除板面岩点；结束线路编辑后可继续维护板面。' : '点击点位查看颜色、外形和用途。开启手工修改后可拖动、用方向键微调、删除或补点；修改后仍为已确认状态，保存后下次继续使用。'}</span>
                 </div>
               )}
 
@@ -1656,7 +1737,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               )}
               {routeMode === "tianyu" && (
                 <div className="tianyu-board-controls">
-                  <Select value={String(tianyuAngle)} onValueChange={changeTianyuAngle} disabled={isGenerating || tianyuLoading}>
+                  <Select value={String(tianyuEditor?.document.board.angle ?? tianyuAngle)} onValueChange={changeTianyuAngle} disabled={isGenerating || tianyuLoading || Boolean(tianyuEditor)}>
                     <SelectTrigger aria-label="天宇板仰角"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {tianyuAngles.map((angle) => <SelectItem key={angle} value={String(angle)}>{angle}°</SelectItem>)}
@@ -1665,16 +1746,18 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                   <Button
                     variant={tianyuAnnotating ? "default" : "outline"}
                     size="sm"
+                    disabled={Boolean(tianyuEditor) || isGenerating}
                     onClick={() => setTianyuAnnotating((current) => !current)}
                   >
                     <MousePointer2 size={15} />
                     {tianyuAnnotating ? "标注中" : "标注点位"}
                   </Button>
+                  <Button variant="outline" size="sm" disabled={isGenerating || tianyuLoading || tianyuRouteBusy} onClick={() => openTianyuRoute({ dirty: true, document: newTianyuRoute(tianyuHolds, tianyuAngle, tianyuReviewRevision) })}>手工定线</Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={saveTianyuBoard}
-                    disabled={tianyuLoading || tianyuHolds.length === 0 || !tianyuDirty}
+                    disabled={tianyuLoading || tianyuHolds.length === 0 || !tianyuDirty || Boolean(tianyuEditor)}
                   >
                     <Save size={15} />
                     保存天宇板
@@ -1684,10 +1767,10 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               <Button
                 variant="outline"
                 size="sm"
-                disabled={currentPointCount === 0}
+                disabled={currentPointCount === 0 || (routeMode === 'tianyu' && (Boolean(tianyuEditor) || isGenerating))}
                 onClick={() => setClearDialogOpen(true)}
               >
-                清空
+                {routeMode === 'tianyu' ? '清空点位图' : '清空'}
               </Button>
             </div>
           </div>
@@ -1717,7 +1800,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
           <div className="wall-frame">
             {routeMode === "tianyu" ? (
               <div
-                className={`climbing-wall tianyu-wall ${tianyuAnnotating ? "is-annotating" : ""} ${activeTianyuCandidate ? "route-preview-active" : ""}`}
+                className={`climbing-wall tianyu-wall ${tianyuAnnotating ? "is-annotating" : ""} ${tianyuEditor ? 'is-route-editing' : ''} ${tianyuRouteVisible ? "route-preview-active" : ""}`}
                 ref={wallRef}
                 onClick={handleTianyuPhotoClick}
               >
@@ -1726,7 +1809,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                 <svg className="tianyu-board-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <polygon points={`${tianyuPhotoQuad.topLeft.x},${tianyuPhotoQuad.topLeft.y} ${tianyuPhotoQuad.topRight.x},${tianyuPhotoQuad.topRight.y} ${tianyuPhotoQuad.bottomRight.x},${tianyuPhotoQuad.bottomRight.y} ${tianyuPhotoQuad.bottomLeft.x},${tianyuPhotoQuad.bottomLeft.y}`} />
                 </svg>
-                <div className="tianyu-photo-badge" hidden={Boolean(activeTianyuCandidate)}>
+                <div className="tianyu-photo-badge" hidden={tianyuRouteVisible}>
                   <strong>TY-01 · 4 × 4 m</strong>
                   <span>{tianyuAngle}° 仰角 · 透视矫正正方形</span>
                 </div>
@@ -1742,7 +1825,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                   const routePoint = activeTianyuRouteByInstance.get(point.id);
                   return (
                     <button
-                      className={`tianyu-hotspot role-${routePoint ? visualRole(routePoint) : "manual"} source-${point.source} ${point.confirmed ? "confirmed" : "auto-pending"} ${selectedTianyuId === point.id ? "selected" : ""} ${focusedRouteId === point.id ? "route-focused" : ""} ${activeTianyuCandidate ? routePoint ? "route-active" : "route-muted" : ""}`}
+                      className={`tianyu-hotspot role-${routePoint ? visualRole(routePoint) : "manual"} source-${point.source} ${point.confirmed ? "confirmed" : "auto-pending"} ${selectedTianyuId === point.id ? "selected" : ""} ${focusedRouteId === point.id ? "route-focused" : ""} ${tianyuRouteVisible ? routePoint ? "route-active" : "route-muted" : ""}`}
                       key={point.id}
                       style={{
                         left: `${photoPoint.x}%`,
@@ -1752,7 +1835,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                       type="button"
                       title={[point.serial, routePoint ? routePointDescription(routePoint) : "", point.color, point.shape, point.grip, point.size, point.confirmed ? "已确认" : "待确认"].filter(Boolean).join(" · ")}
                       aria-label={[point.serial, routePoint ? routePointDescription(routePoint) : "", point.grip].filter(Boolean).join(" · ")}
-                      onClick={(event) => { event.stopPropagation(); setSelectedTianyuId(point.id); }}
+                      onClick={(event) => { event.stopPropagation(); selectTianyuRoutePoint(point); }}
                       onPointerEnter={() => setHoveredRouteId(point.id)}
                       onPointerLeave={() => setHoveredRouteId(null)}
                       onFocus={() => setSelectedTianyuId(point.id)}
@@ -1761,6 +1844,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                       onPointerUp={finishTianyuMove}
                       onPointerCancel={finishTianyuMove}
                       onKeyDown={(event) => {
+                        if (tianyuEditor) return;
                         const direction: Record<string, Point2D> = {
                           ArrowLeft: { x: clamp(point.x - 0.5, 0, 100), y: point.y },
                           ArrowRight: { x: clamp(point.x + 0.5, 0, 100), y: point.y },
@@ -1859,6 +1943,12 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               </div>
             )}
           </div>
+          {routeMode === 'tianyu' && <TianyuRouteEditor
+            editor={tianyuEditor} holds={tianyuHolds} angle={tianyuAngle} boardRevision={tianyuReviewRevision}
+            selectedHoldId={selectedTianyuId} disabled={tianyuLoading || isGenerating}
+            onSelect={setSelectedTianyuId} onOpen={openTianyuRoute} onBusyChange={setTianyuRouteBusy}
+            onChange={state => { setTianyuEditor(state); if (!state) updateModeSession('tianyu', { activeCandidateId: null, manualReviewRequired: true }); }}
+          />}
           {routeListPoints.length > 0 && (
             <details className="route-point-list" open>
               <summary>线路清单 · {routeListPoints.length} 个独立点位 <span>所有用途已去重；编号用于找点，不代表动作顺序</span></summary>
@@ -1879,7 +1969,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
             </details>
           )}
           <div className="safety-note">
-            {manualReviewRequired
+            {tianyuEditor ? '人工线路草稿：不沿用 AI 候选评分。保存前请检查起步、终点与动作，实际使用前必须人工检查和试爬。' : manualReviewRequired
               ? routeMode !== "free"
                 ? routeMode === "tianyu"
                   ? "点位、属性或角度已调整，原候选已失效；请重新生成后再试爬复核。"
@@ -1927,6 +2017,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               rows={5}
             />
           </label>
+          {routeMode === 'tianyu' && tianyuEditor && <p className="ai-warning">正在编辑人工线路。请先保存并结束线路编辑，再生成新的 AI 候选。</p>}
           <div className="model-picker">
             <span>定线模型</span>
             <Select value={model} onValueChange={(value) => setModel(value as RouteModel)} disabled={isGenerating}>
@@ -1948,7 +2039,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
           <Button
             className="generate-button"
             onClick={() => void generateFromPrompt()}
-            disabled={(routeMode !== "tianyu" && !payload) || prompt.trim().length < 3 || isGenerating || (routeMode === "fixed" && !fixedBoardReady) || (routeMode === "tianyu" && !tianyuBoardReady)}
+            disabled={(routeMode !== "tianyu" && !payload) || prompt.trim().length < 3 || isGenerating || (routeMode === "fixed" && !fixedBoardReady) || (routeMode === "tianyu" && (!tianyuBoardReady || Boolean(tianyuEditor)))}
             title={routeMode === "fixed" && !fixedBoardReady
               ? "固定板至少需要 6 个已安装点"
               : routeMode === "tianyu" && !tianyuBoardReady
@@ -2064,8 +2155,8 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                 {candidate.metrics.issues.length > 0 && (
                   <div className="candidate-issues">{candidate.metrics.issues[0]}</div>
                 )}
-                <Button size="sm" onClick={() => requestCandidate(candidate)}>
-                  {activeCandidateId === candidate.id
+                <Button size="sm" onClick={() => requestCandidate(candidate)} disabled={routeMode === 'tianyu' && tianyuRouteBusy}>
+                  {routeMode === 'tianyu' ? '采用并编辑线路' : activeCandidateId === candidate.id
                     ? routeMode !== "free" ? "已在固定板上显示" : "已采用，可继续调整"
                     : routeMode !== "free" ? "在固定板上显示" : "采用此方案"}
                 </Button>
