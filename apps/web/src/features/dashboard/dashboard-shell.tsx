@@ -37,6 +37,30 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
     if (center === 'operations') setOperationsOpen(true);
   }, [center, activeHref]);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [boardNavigationHidden, setBoardNavigationHidden] = useState(false);
+  const isBoardWorkspace = pathname === '/dashboard/training/board-setting';
+  const navigationHidden = isBoardWorkspace && boardNavigationHidden;
+  useEffect(() => {
+    try { setBoardNavigationHidden(window.localStorage.getItem('climbing.training-board.navigation-hidden.v1') === 'true'); }
+    catch { /* Display preferences must not block navigation. */ }
+    const desktop = window.matchMedia('(min-width: 761px)');
+    const closeMobile = () => { if (desktop.matches) setMobileOpen(false); };
+    desktop.addEventListener('change', closeMobile);
+    return () => desktop.removeEventListener('change', closeMobile);
+  }, []);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setMobileOpen(false); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [mobileOpen]);
+  function toggleBoardNavigation() {
+    const next = !boardNavigationHidden;
+    setBoardNavigationHidden(next);
+    setMobileOpen(false);
+    try { window.localStorage.setItem('climbing.training-board.navigation-hidden.v1', String(next)); }
+    catch { /* Hiding still works when local storage is unavailable. */ }
+  }
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function logout(): Promise<void> {
@@ -50,11 +74,12 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
   }
 
   return (
-    <div className="dashboard-shell">
+    <div className={`dashboard-shell ${navigationHidden ? 'board-navigation-hidden' : ''}`}>
       <Sidebar
         trainingOpen={trainingOpen}
         operationsOpen={operationsOpen}
         mobileOpen={mobileOpen}
+        hidden={navigationHidden && !mobileOpen}
         pathname={activeHref}
         session={session}
         routeSettingEnabled={routeSettingEnabled}
@@ -76,6 +101,9 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
           session={session}
           onLogout={logout}
           onMenu={() => setMobileOpen(true)}
+          mobileMenuOpen={mobileOpen}
+          boardNavigationHidden={navigationHidden}
+          onNavigationToggle={isBoardWorkspace ? toggleBoardNavigation : undefined}
         />
         <main className="dashboard-main">{children}</main>
       </section>
@@ -87,6 +115,7 @@ interface SidebarProps {
   trainingOpen: boolean;
   operationsOpen: boolean;
   mobileOpen: boolean;
+  hidden: boolean;
   pathname: string;
   session: AuthenticatedSession;
   routeSettingEnabled: boolean;
@@ -97,7 +126,7 @@ interface SidebarProps {
 
 function Sidebar(props: SidebarProps) {
   return (
-    <aside className={`dashboard-sidebar ${props.mobileOpen ? 'is-open' : ''}`}>
+    <aside id="dashboard-sidebar" hidden={props.hidden} className={`dashboard-sidebar ${props.mobileOpen ? 'is-open' : ''}`}>
       <Link className="dashboard-brand" href="/dashboard" onClick={props.onNavigate}>
         <span className="dashboard-brand-mark">↗</span>
         <span>
@@ -241,18 +270,29 @@ function DashboardHeader({
   session,
   onLogout,
   onMenu,
+  mobileMenuOpen,
+  boardNavigationHidden,
+  onNavigationToggle,
 }: {
   loggingOut: boolean;
   pathname: string;
   session: AuthenticatedSession;
   onLogout: () => void;
   onMenu: () => void;
+  mobileMenuOpen: boolean;
+  boardNavigationHidden: boolean;
+  onNavigationToggle?: () => void;
 }) {
   return (
     <header className="dashboard-header">
-      <button className="mobile-menu-button" type="button" aria-label="打开导航" onClick={onMenu}>
+      <button className="mobile-menu-button" type="button" aria-label="打开导航" aria-controls="dashboard-sidebar" aria-expanded={mobileMenuOpen} onClick={onMenu}>
         <DashboardIcon name="menu" />
       </button>
+      {onNavigationToggle && <button className="desktop-navigation-toggle" type="button"
+        aria-controls="dashboard-sidebar" aria-expanded={!boardNavigationHidden}
+        aria-label={boardNavigationHidden ? '显示导航' : '隐藏导航'} onClick={onNavigationToggle}>
+        <DashboardIcon name="menu" /><span>{boardNavigationHidden ? '显示导航' : '隐藏导航'}</span>
+      </button>}
       <div>
         <p>{navigationCenter(pathname.split('?')[0]) === 'training' ? '训练中心 · 运动员' : navigationCenter(pathname.split('?')[0]) === 'operations' ? '运营中心 · 岩馆' : '工作空间'}</p>
         <h1>{pageTitles[pathname] ?? '攀岩馆管理'}</h1>
