@@ -45,7 +45,9 @@ import { useWorkspaceLayout } from './use-workspace-layout';
 import { fitFloorPoint, parseFloorDraft, type FloorHold, type FloorPlacement } from './floor-wall-data';
 import { WALL_ID, getFace, workingArea } from '../../../../../packages/config/tianyu-floor-wall';
 import { TianyuRouteEditor } from "./tianyu-route-editor";
-import { pickTianyuPhotoTarget } from "./tianyu-interaction";
+import { nearbyTianyuTargets, pickTianyuPhotoTarget } from "./tianyu-interaction";
+import { photoCoordinates } from './board-viewport';
+import { TianyuPhotoViewport } from './tianyu-photo-viewport';
 import { addRoutePoint, newTianyuRoute, routeFromCandidate, type TianyuRouteEditorState } from "./tianyu-route";
 import {
   attachTianyuRegistration,
@@ -70,6 +72,7 @@ import {
 } from "./ui/select";
 
 type Hold = FloorHold;
+function StaticWallFrame({children}:React.ComponentProps<typeof TianyuPhotoViewport>) { return <div className="wall-frame">{children}</div>; }
 
 type HoldPayload = {
   meta: {
@@ -440,7 +443,11 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("全部");
   const [routeMode, setRouteMode] = useState<RouteMode>(workspace === "training-board" ? "tianyu" : "free");
-  const workspaceRef = useWorkspaceLayout(routeMode);
+  const [tianyuFocusMode,setTianyuFocusMode] = useState(false);
+  const [touchInput,setTouchInput] = useState(false);
+  const [tianyuPickChoices,setTianyuPickChoices] = useState<TianyuHold[]>([]);
+  const workspaceRef = useWorkspaceLayout(routeMode,routeMode==='tianyu' && tianyuFocusMode);
+  const WallFrame = routeMode==='tianyu' ? TianyuPhotoViewport : StaticWallFrame;
   const [freePlacements, setFreePlacements] = useState<Placement[]>([]);
   const [floorFaceId, setFloorFaceId] = useState('F2');
   const [pendingFloorHold, setPendingFloorHold] = useState<Hold | null>(null);
@@ -463,6 +470,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
   const [tianyuToolsCollapsed, setTianyuToolsCollapsed] = useState(false);
   useEffect(() => {
     if (window.matchMedia('(any-pointer: coarse)').matches) {
+      setTouchInput(true);
       setFloorTool('none');
       setTianyuToolsCollapsed(true);
     }
@@ -1111,6 +1119,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
 
   function selectTianyuRoutePoint(point: TianyuHold) {
     if (tianyuRouteBusy) return;
+    setTianyuPickChoices([]);
     setSelectedTianyuId(point.id);
     if (tianyuEditor) setActiveTianyuTool('manual');
     setTianyuEditor(current => {
@@ -1319,13 +1328,18 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
     invalidateTianyuBoard();
   }
 
-  function handleTianyuPhotoClick(event: React.MouseEvent<HTMLDivElement>) {
-    const wall = event.currentTarget;
+  function handleTianyuPhotoTap(clientX:number,clientY:number,touch:boolean) {
+    const wall = wallRef.current;if(!wall)return;
     const rect = wall.getBoundingClientRect();
-    const tap = { x: event.clientX - rect.left - wall.clientLeft, y: event.clientY - rect.top - wall.clientTop };
+    const tap = photoCoordinates({x:clientX,y:clientY},rect,{width:wall.clientWidth,height:wall.clientHeight,borderX:wall.clientLeft,borderY:wall.clientTop,outerWidth:wall.offsetWidth,outerHeight:wall.offsetHeight});
     if (!tianyuAnnotating) {
-      const target = pickTianyuPhotoTarget(tianyuHolds.map(hold => ({ ...boardToPhoto(hold.x, hold.y), radius: hold.radius, id: hold.id, hold })), tap,
-        { width: wall.clientWidth, height: wall.clientHeight }, window.matchMedia('(any-pointer: coarse)').matches);
+      const targets=tianyuHolds.map(hold => ({ ...boardToPhoto(hold.x, hold.y), radius: hold.radius, id: hold.id, hold }));
+      const scale=rect.width/wall.offsetWidth;
+      const nearby=nearbyTianyuTargets(targets,tap,{width:wall.clientWidth,height:wall.clientHeight},scale);
+      if(nearby.length>1 && nearby[0].distance>4 && nearby[1].distance-nearby[0].distance<9){setTianyuPickChoices(nearby.map(item=>item.target.hold));return;}
+      setTianyuPickChoices([]);
+      const target = pickTianyuPhotoTarget(targets, tap,
+        { width: wall.clientWidth, height: wall.clientHeight }, touch,scale);
       if (target) selectTianyuRoutePoint(target.hold);
       else setSelectedTianyuId(null);
       return;
@@ -1700,7 +1714,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
                 {holds.map((hold) => (
                   <article
                     className={`hold-card ${routeMode === 'free' && pendingFloorHold?.id === hold.id ? 'floor-pending-asset' : ''}`}
-                    draggable
+                    draggable={!touchInput}
                     key={hold.id}
                     onDragStart={(event) => {
                       event.dataTransfer.setData("text/hold-id", hold.id);
@@ -1710,10 +1724,10 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
                     <button
                       className="hold-image-wrap"
                       type="button"
-                      onClick={() => { if (routeMode === 'free') { setPendingFloorHold(hold); setSelectedId(null); } else addToWall(hold); }}
+                      onClick={() => { if (routeMode === 'free') { setPendingFloorHold(hold); setSelectedId(null); if(touchInput)setFloorTool('none'); } else addToWall(hold); }}
                       aria-label={`把 ${hold.serial} 添加到墙面`}
                     >
-                      <img src={hold.image} alt={`${hold.serial} ${hold.description}`} />
+                      <img src={hold.image} alt={`${hold.serial} ${hold.description}`} draggable={false} />
                     </button>
                     <div className="hold-card-copy">
                       <strong>{hold.serial}</strong>
@@ -1842,12 +1856,17 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
             <small>点击岩点查看其配准状态；GLB 投影留白处没有扫描。</small>
           </div>}
 
-          <div className="wall-frame">
+          <WallFrame disabled={tianyuAnnotating} onTap={handleTianyuPhotoTap} overlay={tianyuPickChoices.length>0 && <div className="board-pick-confirm" role="group" aria-label="确认附近岩点" onPointerDown={event=>event.stopPropagation()}>
+            <strong>附近有多个岩点，请确认</strong><button type="button" aria-label="取消选点" onClick={()=>setTianyuPickChoices([])}>取消</button>
+            <div>{tianyuPickChoices.map(point=>{const p=boardToPhoto(point.x,point.y);return <button type="button" key={point.id} onClick={()=>selectTianyuRoutePoint(point)}>
+              <svg viewBox={`${p.x-6} ${p.y-6} 12 12`} aria-hidden="true"><image href="/boards/tianyu/front-square.jpg" width="100" height="100"/><circle cx={p.x} cy={p.y} r="1" fill="none" stroke="white" strokeWidth=".25"/></svg><span>{point.serial}</span>
+            </button>;})}</div>
+          </div>}>
             {routeMode === "tianyu" ? (
               <div
                 className={`climbing-wall tianyu-wall ${tianyuAnnotating ? "is-annotating" : ""} ${boardMaintenanceOpen ? 'show-point-markers' : ''} ${showTianyuRouteMarks ? '' : 'hide-route-markers'} ${tianyuEditor ? 'is-route-editing' : ''} ${tianyuRouteVisible ? "route-preview-active" : ""}`}
                 ref={wallRef}
-                onClick={handleTianyuPhotoClick}
+                onClick={event=>{if(tianyuAnnotating)handleTianyuPhotoTap(event.clientX,event.clientY,false);}}
               >
                 <img className="tianyu-photo" style={{ opacity: tianyuImageMode === "scan" ? 0 : 1 }} src="/boards/tianyu/front-square.jpg" alt="天宇4乘4米可调角度训练板透视矫正正面照片" draggable={false} />
                 {tianyuRegistration && tianyuImageMode !== "photo" && <img className="tianyu-photo tianyu-registration-overlay" style={{ opacity: tianyuImageMode === "scan" ? 1 : tianyuOverlayOpacity }} src={tianyuRegistration.assets.projection} alt="与照片配准后的原始 GLB 投影，顶部空白为扫描缺失区域" draggable={false} />}
@@ -1988,7 +2007,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
                 )}
               </div>
             )}
-          </div>
+          </WallFrame>
           {routeListPoints.length > 0 && (
             <details className="route-point-list" open={routeMode !== 'tianyu'}>
               <summary>线路清单 · {routeListPoints.length} 个独立点位 <span>所有用途已去重；编号用于找点，不代表动作顺序</span></summary>
@@ -2235,7 +2254,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
   </section>;
 
   return (
-    <main ref={workspaceRef} className={`route-app ${routeMode === 'tianyu' ? 'tianyu-workspace' : routeMode === 'free' ? 'floor-workspace' : ''}`} data-floor-tool={floorTool} data-active-tool={activeTianyuTool} data-tools-collapsed={tianyuToolsCollapsed}>
+    <main ref={workspaceRef} className={`route-app ${routeMode === 'tianyu' ? 'tianyu-workspace' : routeMode === 'free' ? 'floor-workspace' : ''}`} data-board-focus={routeMode==='tianyu' && tianyuFocusMode} data-floor-tool={floorTool} data-active-tool={activeTianyuTool} data-tools-collapsed={tianyuToolsCollapsed}>
       {appHeader}
       <section className="workspace-grid">
         {routeMode === 'tianyu' ? <>
@@ -2243,6 +2262,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
             <button type="button" aria-pressed={!tianyuToolsCollapsed && activeTianyuTool === 'ai'} aria-controls="tianyu-ai-panel" onClick={() => { setActiveTianyuTool('ai'); setTianyuToolsCollapsed(false); }}>AI 辅助定线</button>
             <button type="button" aria-pressed={!tianyuToolsCollapsed && activeTianyuTool === 'manual'} aria-controls="tianyu-manual-panel" onClick={() => { setActiveTianyuTool('manual'); setTianyuToolsCollapsed(false); }}>人工定线</button>
             <button type="button" aria-pressed={tianyuToolsCollapsed} onClick={() => setTianyuToolsCollapsed(value => !value)}>完整看板</button>
+            <button type="button" aria-pressed={tianyuFocusMode} onClick={()=>{setTianyuFocusMode(value=>!value);setTianyuPickChoices([]);}}>{tianyuFocusMode?'退出专注':'专注定线'}</button>
           </div>
           {aiPanel}{wallPanel}{manualPanel}
         </> : routeMode === 'free' ? <>

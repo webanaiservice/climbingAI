@@ -10,7 +10,7 @@ export function workspaceSizing(width: number, viewportHeight: number, dashboard
 }
 
 /** Measured layout also works on iPadOS 15: no @container/cqw/cqh dependency. */
-export function useWorkspaceLayout(mode: string) {
+export function useWorkspaceLayout(mode: string, focused = false) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const root = ref.current;
@@ -22,7 +22,7 @@ export function useWorkspaceLayout(mode: string) {
     const measure = () => {
       const width = root.getBoundingClientRect().width;
       const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      const {height, breakpoints} = workspaceSizing(width, viewportHeight, header?.getBoundingClientRect().height ?? 0, appHeader?.getBoundingClientRect().height ?? 0);
+      const {height, breakpoints} = workspaceSizing(width, viewportHeight, focused ? 0 : header?.getBoundingClientRect().height ?? 0, appHeader?.getBoundingClientRect().height ?? 0);
       for (const [name,value] of Object.entries(breakpoints)) root.setAttribute(name, value);
       root.setAttribute('data-min-781', String(width >= 781));
       root.style.setProperty('--route-workspace-height', `${height}px`);
@@ -38,6 +38,6 @@ export function useWorkspaceLayout(mode: string) {
     window.visualViewport?.addEventListener('resize', schedule);
     measure();
     return () => { cancelAnimationFrame(raf); observer.disconnect(); window.removeEventListener('resize', schedule); window.visualViewport?.removeEventListener('resize', schedule); };
-  }, [mode]);
+  }, [mode, focused]);
   return ref;
 }

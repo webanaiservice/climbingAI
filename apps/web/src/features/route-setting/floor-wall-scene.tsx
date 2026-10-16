@@ -5,11 +5,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { faces, getFace, HEIGHT, PLINTH, WIDTH, normalFor, pointToSurface, surfacePoint, type Vec3 } from '../../../../../packages/config/tianyu-floor-wall';
 import { holdDiameterM, type FloorHold, type FloorPlacement } from './floor-wall-data';
+import { fingerPair, type XY } from './board-viewport';
 
 type SurfaceHit = { surfaceId: string; x: number; y: number };
 type Props = {
   placements: FloorPlacement[]; selectedId: string | null; faceId: string;
   pendingHold: FloorHold | null; interaction: 'edit' | 'orbit'; view: { kind: 'front' | 'side' | 'all'; nonce: number };
+  zoom: { factor: number; nonce: number };
   onSelect(id: string | null): void; onMove(id: string, hit: SurfaceHit): void;
   onPlace(holdId: string, hit: SurfaceHit): void;
 };
@@ -17,6 +19,7 @@ type Runtime = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer; controls: OrbitControls;
   wallMeshes: THREE.Mesh[]; holdGroup: THREE.Group; render(): void; frame(): void;
   textures: Map<string, THREE.Texture>; textureSize: number;
+  zoom(factor:number):void;
 };
 
 function disposeGroup(group: THREE.Group, disposeMaps = true) {
@@ -99,7 +102,12 @@ export default function FloorWallScene(props: Props) {
       controls.update(); render();
     };
     const textures = new Map<string, THREE.Texture>();
-    runtime.current = { scene, camera, renderer, controls, wallMeshes, holdGroup, render, frame, textures, textureSize: touchDevice ? 256 : 512 };
+    const zoom = (factor:number) => {
+      const offset=camera.position.clone().sub(controls.target), distance=offset.length();
+      offset.setLength(Math.max(controls.minDistance,Math.min(controls.maxDistance,distance/factor)));
+      camera.position.copy(controls.target).add(offset);controls.update();render();
+    };
+    runtime.current = { scene, camera, renderer, controls, wallMeshes, holdGroup, render, frame, textures, zoom, textureSize: touchDevice ? 256 : 512 };
     let lastWidth = 0;
     const resize = () => { const r = host.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return;
       renderer.setSize(r.width, r.height); camera.aspect = r.width/r.height; camera.updateProjectionMatrix();
@@ -131,11 +139,48 @@ export default function FloorWallScene(props: Props) {
     }
     let gesture: { pointer: number; x: number; y: number; id: string | null; moved: boolean; hit: SurfaceHit | null } | null = null;
     const pointers = new Set<number>(); let multi = false;
+    // Own edit-mode touch gestures instead of competing with OrbitControls' pointer capture.
+    const touches = new Map<number,XY>();
+    let touchDrag: { start:XY; id:string|null; moved:boolean; multi:boolean; hit:SurfaceHit|null } | null = null;
+    const panTouch = (dx:number,dy:number) => {
+      const height=renderer.domElement.getBoundingClientRect().height;
+      const unit=2*camera.position.distanceTo(controls.target)*Math.tan(camera.fov*Math.PI/360)/height;
+      const shift=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0).multiplyScalar(-dx*unit)
+        .addScaledVector(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1),dy*unit);
+      camera.position.add(shift);controls.target.add(shift);controls.update();render();
+    };
+    const endTouch = (event:PointerEvent,cancelled=false) => {
+      event.preventDefault();event.stopImmediatePropagation();
+      const current=touchDrag;touches.delete(event.pointerId);
+      if(!cancelled && current && !current.multi && !touches.size){
+        if(current.id && current.moved && current.hit)latest.current.onMove(current.id,current.hit);
+        else if(!current.moved){
+          const hit=wallHit(event.clientX,event.clientY);
+          if(hit&&latest.current.pendingHold)latest.current.onPlace(latest.current.pendingHold.id,hit);
+          else latest.current.onSelect(pickHold(event.clientX,event.clientY));
+        }
+      }
+      if(current?.id && (cancelled || (current.moved && !current.hit))){const p=latest.current.placements.find(p=>p.instanceId===current.id),object=holdGroup.children.find(o=>o.userData.instanceId===current.id);if(p&&object)positionHold(object,p);}
+      if(cancelled && touchDrag)touchDrag.multi=true;
+      if(!touches.size){touchDrag=null;controls.enabled=true;}
+      if(renderer.domElement.hasPointerCapture(event.pointerId))renderer.domElement.releasePointerCapture(event.pointerId);
+      render();
+    };
     function restoreDrag() {
       if (gesture?.id) { const p = latest.current.placements.find(p => p.instanceId === gesture?.id), object = holdGroup.children.find(o => o.userData.instanceId === gesture?.id); if (p && object) positionHold(object, p); }
       gesture = null; controls.enabled = true; render();
     }
     const down = (event: PointerEvent) => {
+      if(event.pointerType==='touch' && (latest.current.interaction==='edit'||latest.current.pendingHold||touches.size)){
+        event.preventDefault();event.stopImmediatePropagation();controls.enabled=false;
+        const p={x:event.clientX,y:event.clientY};touches.set(event.pointerId,p);
+        if(touches.size===1){const id=latest.current.pendingHold?null:pickHold(p.x,p.y);touchDrag={start:p,id,moved:false,multi:false,hit:null};if(id)latest.current.onSelect(id);}
+        else if(touchDrag){
+          if(touchDrag.id){const p=latest.current.placements.find(p=>p.instanceId===touchDrag?.id),object=holdGroup.children.find(o=>o.userData.instanceId===touchDrag?.id);if(p&&object)positionHold(object,p);}
+          touchDrag.multi=true;touchDrag.hit=null;
+        }
+        renderer.domElement.setPointerCapture(event.pointerId);return;
+      }
       pointers.add(event.pointerId);
       if (pointers.size > 1) { multi = true; restoreDrag(); return; }
       multi = false;
@@ -144,6 +189,17 @@ export default function FloorWallScene(props: Props) {
       if (id) { latest.current.onSelect(id); controls.enabled = false; event.stopImmediatePropagation(); renderer.domElement.setPointerCapture(event.pointerId); }
     };
     const move = (event: PointerEvent) => {
+      const old=touches.get(event.pointerId);
+      if(old && touchDrag){
+        event.preventDefault();event.stopImmediatePropagation();const previous=[...touches.values()],p={x:event.clientX,y:event.clientY};touches.set(event.pointerId,p);
+        if(touches.size>=2){const before=fingerPair(previous),after=fingerPair([...touches.values()]);zoom(after.distance/before.distance);panTouch(after.center.x-before.center.x,after.center.y-before.center.y);return;}
+        if(touchDrag.multi)return;
+        if(Math.hypot(p.x-touchDrag.start.x,p.y-touchDrag.start.y)>8)touchDrag.moved=true;
+        if(!touchDrag.moved)return;
+        if(touchDrag.id){const hit=wallHit(p.x,p.y);touchDrag.hit=hit;const point=latest.current.placements.find(p=>p.instanceId===touchDrag?.id),object=holdGroup.children.find(o=>o.userData.instanceId===touchDrag?.id);if(hit&&point&&object){positionHold(object,{...point,...hit});render();}}
+        else if(!latest.current.pendingHold)panTouch(p.x-old.x,p.y-old.y);
+        return;
+      }
       if (!gesture || gesture.pointer !== event.pointerId || multi) return;
       if (Math.hypot(event.clientX-gesture.x, event.clientY-gesture.y) > 6) gesture.moved = true;
       if (!gesture.id || !gesture.moved) return;
@@ -153,7 +209,9 @@ export default function FloorWallScene(props: Props) {
       if (hit && point && object) { positionHold(object, { ...point, ...hit }); render(); }
     };
     const up = (event: PointerEvent) => {
+      if(touches.has(event.pointerId)){endTouch(event);return;}
       pointers.delete(event.pointerId); const current = gesture;
+      if(current?.id)event.stopImmediatePropagation();
       if (!multi && current?.pointer === event.pointerId) {
         if (current.id && current.moved && current.hit) latest.current.onMove(current.id, current.hit);
         else if (!current.id && !current.moved) {
@@ -164,18 +222,21 @@ export default function FloorWallScene(props: Props) {
       }
       restoreDrag(); if (pointers.size === 0) multi = false;
     };
-    const cancel = (event: PointerEvent) => { pointers.delete(event.pointerId); restoreDrag(); };
+    const cancel = (event: PointerEvent) => { if(touches.has(event.pointerId)){endTouch(event,true);return;} pointers.delete(event.pointerId); restoreDrag(); };
+    const lostCapture = (event:PointerEvent) => { if(touches.has(event.pointerId)||gesture?.pointer===event.pointerId)cancel(event); };
     const dragover = (event: DragEvent) => event.preventDefault();
     const drop = (event: DragEvent) => { event.preventDefault(); const id = event.dataTransfer?.getData('text/hold-id'), hit = wallHit(event.clientX,event.clientY); if (id && hit) latest.current.onPlace(id,hit); };
     const lost = (event: Event) => { event.preventDefault(); setError('3D 显示已暂停。草稿仍在，请刷新页面重新打开。'); };
     renderer.domElement.addEventListener('pointerdown', down, true); renderer.domElement.addEventListener('pointermove', move, true);
     renderer.domElement.addEventListener('pointerup', up, true); renderer.domElement.addEventListener('pointercancel', cancel, true);
+    renderer.domElement.addEventListener('lostpointercapture', lostCapture, true);
     renderer.domElement.addEventListener('dragover', dragover); renderer.domElement.addEventListener('drop', drop);
     renderer.domElement.addEventListener('webglcontextlost', lost);
     resize(); setReady(true);
     return () => { stopped = true; cancelAnimationFrame(renderFrame); observer.disconnect(); controls.removeEventListener('change', render); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down, true); renderer.domElement.removeEventListener('pointermove', move, true);
       renderer.domElement.removeEventListener('pointerup', up, true); renderer.domElement.removeEventListener('pointercancel', cancel, true);
+      renderer.domElement.removeEventListener('lostpointercapture', lostCapture, true);
       renderer.domElement.removeEventListener('dragover', dragover); renderer.domElement.removeEventListener('drop', drop); renderer.domElement.removeEventListener('webglcontextlost', lost);
       disposeGroup(modelGroup); disposeGroup(holdGroup, false); textures.forEach(texture => texture.dispose()); textures.clear(); renderer.dispose(); renderer.domElement.remove(); runtime.current = null;
     };
@@ -256,6 +317,8 @@ export default function FloorWallScene(props: Props) {
     for (const mesh of rt.wallMeshes) (mesh.material as THREE.MeshStandardMaterial).color.set(mesh.userData.faceId===props.faceId ? '#e4e1cc' : getFace(mesh.userData.faceId)?.kind==='join' ? '#abb9b3' : '#d2d8cd');
     rt.render();
   }, [ready, props.faceId, props.view]);
+
+  useEffect(()=>{if(props.zoom.nonce)runtime.current?.zoom(props.zoom.factor);},[props.zoom]);
 
   return <div className="floor-wall-viewport" ref={hostRef} data-ready={ready}>
     {error && <div className="floor-wall-error" role="alert">{error}</div>}
