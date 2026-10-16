@@ -41,8 +41,10 @@ export type RouteConstraints = {
   style: RouteStyle;
   traverse: boolean;
   farFinish: boolean;
-  /** 0° 为直壁，60° 为最大仰角；仅固定板模式设置。 */
+  /** 正值为仰角，负值为缓斜。 */
   wallAngleDegrees?: number;
+  wallWidthM?: number;
+  wallHeightM?: number;
   startPointCount?: 3 | 4;
 };
 
@@ -140,8 +142,8 @@ function snap(value: number) {
   return clamp(Math.round(value / 5) * 5, 5, 95);
 }
 
-function distanceCm(a: { x: number; y: number }, b: { x: number; y: number }) {
-  return Math.hypot(a.x - b.x, a.y - b.y) * 4;
+function distanceCm(a: { x: number; y: number }, b: { x: number; y: number }, constraints?: RouteConstraints) {
+  return Math.hypot((a.x - b.x) * (constraints?.wallWidthM ?? 4), (a.y - b.y) * (constraints?.wallHeightM ?? 4));
 }
 
 function hashText(text: string) {
@@ -414,15 +416,15 @@ function pathY(constraints: RouteConstraints, progress: number) {
 
 function constrainTarget(proposed: { x: number; y: number }, moving: { x: number; y: number }, remaining: { x: number; y: number }, constraints: RouteConstraints, move: AiMove) {
   const limitCm = constraints.grade <= 2 ? 110 : constraints.grade <= 5 ? 130 : constraints.grade <= 7 ? 145 : 160;
-  const moveLimit = (limitCm + (move.technique === "dynamic" ? 20 : 0)) / 4;
-  const spanLimit = (limitCm + 15) / 4;
+  const moveLimit = limitCm + (move.technique === "dynamic" ? 20 : 0);
+  const spanLimit = limitCm + 15;
   let target = { x: clamp(proposed.x, 8, 92), y: clamp(proposed.y, 8, 90) };
-  const travel = Math.hypot(target.x - moving.x, target.y - moving.y);
+  const travel = distanceCm(target, moving, constraints);
   if (travel > moveLimit) {
     const ratio = moveLimit / travel;
     target = { x: moving.x + (target.x - moving.x) * ratio, y: moving.y + (target.y - moving.y) * ratio };
   }
-  const span = Math.hypot(target.x - remaining.x, target.y - remaining.y);
+  const span = distanceCm(target, remaining, constraints);
   if (span > spanLimit) {
     const ratio = spanLimit / span;
     target = { x: remaining.x + (target.x - remaining.x) * ratio, y: remaining.y + (target.y - remaining.y) * ratio };
@@ -448,9 +450,18 @@ function chooseHold(holds: HoldAsset[], used: Set<string>, draft: PlacementDraft
       if (shape) score -= 100;
     } else if (shape) score -= 45;
     if (["start", "finish"].includes(draft.role) && constraints.grade <= 3 && ["把手", "开放点"].includes(hold.grip)) score += 32;
+    if (constraints.wallWidthM && (draft.role === 'move' || draft.role === 'finish')) {
+      const hands = occupied.filter(p => p.role !== 'foot');
+      const moving = [...hands].reverse().find(p => p.hand === draft.hand || p.hand === 'both') ?? hands[0];
+      const other = [...hands].reverse().find(p => p.hand !== draft.hand || p.hand === 'both') ?? moving;
+      if (moving && other) {
+        const effort = movementDifficulty(distanceCm(moving, draft, constraints), distanceCm(other, draft, constraints), hold, draft.technique ?? 'static', constraints.wallAngleDegrees ?? 0);
+        score -= Math.max(0, effort - constraints.grade - .25) * 240;
+      }
+    }
     for (const placement of occupied) {
       const other = holds.find((asset) => asset.id === placement.holdId);
-      const gap = Math.hypot(placement.x - draft.x, placement.y - draft.y);
+      const gap = distanceCm(placement, draft, constraints) / 4;
       if (gap < (footprintRadius(hold) + footprintRadius(other)) * 0.82) score -= 200;
     }
     return { hold, score };
@@ -501,7 +512,7 @@ function buildDraft(plan: AiPlan, constraints: RouteConstraints, variant: number
       { x: snap(bodyX + offset), y: snap(Math.min(95, baseY + 5)) },
     ]);
     const foot = candidates.sort((a, b) => {
-      const clearance = (point: { x: number; y: number }) => Math.min(...drafts.map((draft) => Math.hypot(point.x - draft.x, point.y - draft.y)));
+      const clearance = (point: { x: number; y: number }) => Math.min(...drafts.map((draft) => distanceCm(point, draft, constraints) / 4));
       const scoreA = clearance(a) - Math.abs(a.x - bodyX) * 0.08;
       const scoreB = clearance(b) - Math.abs(b.x - bodyX) * 0.08;
       return scoreB - scoreA;
@@ -593,7 +604,7 @@ function startStanceMetrics(placements: ResolvedPlacement[], constraints: RouteC
   const lowerHandY = Math.max(...hands.map((placement) => placement.y));
   const bodyX = hands.reduce((sum, placement) => sum + placement.x, 0) / Math.max(1, hands.length);
   const startStance = countsValid && [1, 2].includes(hands.length) && limbs.has("LH") && limbs.has("RH") && feet.length === 2 && limbs.has("LF") && limbs.has("RF")
-    && feet.every((foot) => foot.y >= lowerHandY + 4 && foot.y - lowerHandY <= 35 && Math.abs(foot.x - bodyX) <= 28);
+    && feet.every((foot) => (foot.y - lowerHandY) * (constraints.wallHeightM ?? 4) >= 16 && (foot.y - lowerHandY) * (constraints.wallHeightM ?? 4) <= 140 && Math.abs(foot.x - bodyX) * (constraints.wallWidthM ?? 4) <= 112);
   return { startHoldCount: starts.length, startHandCount: hands.length, startFootCount: feet.length, startStance };
 }
 
@@ -617,16 +628,16 @@ function validate(placements: ResolvedPlacement[], constraints: RouteConstraints
     const bodyX = (state[other].x + target.x) / 2;
     const lowerHandY = Math.max(state[other].y, target.y);
     const support = [...feet, ...visited]
-      .filter((foot) => foot.y >= lowerHandY + 5 && (foot.y - lowerHandY) * 4 <= 150 && Math.abs(foot.x - bodyX) * 4 <= 125)
+      .filter((foot) => (foot.y - lowerHandY) * (constraints.wallHeightM ?? 4) >= 20 && (foot.y - lowerHandY) * (constraints.wallHeightM ?? 4) <= 150 && Math.abs(foot.x - bodyX) * (constraints.wallWidthM ?? 4) <= 125)
       .sort((a, b) => {
-        const supportCost = (point: ResolvedPlacement) => Math.abs((point.y - lowerHandY) * 4 - 72) + Math.abs(point.x - bodyX) * 1.2;
+        const supportCost = (point: ResolvedPlacement) => Math.abs((point.y - lowerHandY) * (constraints.wallHeightM ?? 4) - 72) + Math.abs(point.x - bodyX) * (constraints.wallWidthM ?? 4) * .3;
         return supportCost(a) - supportCost(b);
       })[0];
     beta.push({
       step: placement.step,
       hand,
-      moveCm: Math.round(distanceCm(state[hand], target)),
-      handSpanCm: Math.round(distanceCm(state[other], target)),
+      moveCm: Math.round(distanceCm(state[hand], target, constraints)),
+      handSpanCm: Math.round(distanceCm(state[other], target, constraints)),
       supported: Boolean(support),
       supportHoldIds: support ? [support.holdId] : [],
       technique: placement.technique ?? "static",
@@ -640,7 +651,7 @@ function validate(placements: ResolvedPlacement[], constraints: RouteConstraints
   const supportedMoveRatio = beta.length ? Math.round(beta.filter((step) => step.supported).length / beta.length * 100) : 0;
   let overlaps = 0;
   for (let i = 0; i < placements.length; i += 1) for (let j = i + 1; j < placements.length; j += 1) {
-    if (Math.hypot(placements[i].x - placements[j].x, placements[i].y - placements[j].y) < (footprintRadius(holdById.get(placements[i].holdId)) + footprintRadius(holdById.get(placements[j].holdId))) * 0.82) overlaps += 1;
+    if (distanceCm(placements[i], placements[j], constraints) / 4 < (footprintRadius(holdById.get(placements[i].holdId)) + footprintRadius(holdById.get(placements[j].holdId))) * 0.82) overlaps += 1;
   }
   const startY = starts.length ? starts.reduce((sum, p) => sum + p.y, 0) / starts.length : 0;
   const roles = new Set(placements.map((p) => p.role));

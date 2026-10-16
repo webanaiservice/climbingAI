@@ -19,8 +19,10 @@ describe('独立定线入口的服务端访问控制', () => {
       vi.stubEnv('NODE_ENV', 'production');
       vi.stubEnv('AI_ROUTE_SETTING_ENABLED', 'true');
       vi.stubEnv('AI_ROUTE_SETTING_ALLOWED_EMAILS', 'allowed@example.test');
-      session.mockResolvedValue({ account: { email: 'allowed@example.test' } });
-      expect((await page()).props.workspace).toBe(workspace);
+      session.mockResolvedValue({ organization: { id: 'gym-a' }, account: { id: 'account-a', email: 'allowed@example.test' } });
+      const result = await page();
+      expect(result.props.workspace).toBe(workspace);
+      if (workspace === 'operations') expect(result.props.storageScope).toBe('gym-a.account-a');
       session.mockResolvedValue({ account: { email: 'other@example.test' } });
       await expect(page()).rejects.toThrow('NOT_FOUND');
       vi.stubEnv('AI_ROUTE_SETTING_ENABLED', 'false');

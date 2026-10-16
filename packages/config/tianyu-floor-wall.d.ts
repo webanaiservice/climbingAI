@@ -1,0 +1,13 @@
+export type Vec3 = [number, number, number];
+export type WallFace = { id: string; label: string; kind: 'main' | 'join'; angle: number | null; bottomWidth: number; topWidth: number; vertices: Vec3[] };
+export const WALL_ID: string;
+export const HEIGHT: number;
+export const PLINTH: number;
+export const WIDTH: number;
+export const faces: WallFace[];
+export function getFace(id: string): WallFace | undefined;
+export function surfacePoint(id: string, u: number, v: number): Vec3;
+export function pointToSurface(id: string, point: Vec3): { x: number; y: number };
+export function normalFor(id: string): Vec3;
+export function workingArea(id: string): { faceId: string; left: number; widthM: number; heightM: number; angle: number };
+export function workingToSurface(id: string, x: number, y: number): { x: number; y: number };
