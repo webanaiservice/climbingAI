@@ -16,14 +16,15 @@ type Props = {
 type Runtime = {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer; controls: OrbitControls;
   wallMeshes: THREE.Mesh[]; holdGroup: THREE.Group; render(): void; frame(): void;
+  textures: Map<string, THREE.Texture>; textureSize: number;
 };
 
-function disposeGroup(group: THREE.Group) {
+function disposeGroup(group: THREE.Group, disposeMaps = true) {
   group.traverse(object => {
     if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments || object instanceof THREE.Sprite)) return;
     if ('geometry' in object) object.geometry.dispose();
     const materials = Array.isArray(object.material) ? object.material : [object.material];
-    for (const material of materials) { if ('map' in material) (material.map as THREE.Texture | null)?.dispose(); material.dispose(); }
+    for (const material of materials) { if (disposeMaps && 'map' in material) (material.map as THREE.Texture | null)?.dispose(); material.dispose(); }
   });
   group.clear();
 }
@@ -42,9 +43,10 @@ export default function FloorWallScene(props: Props) {
   useEffect(() => {
     const host = hostRef.current; if (!host) return;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power' }); }
+    const touchDevice = window.matchMedia('(any-pointer: coarse)').matches;
+    try { renderer = new THREE.WebGLRenderer({ antialias: !touchDevice, alpha: false, powerPreference: 'low-power' }); }
     catch { setError('当前浏览器无法启动 3D。请启用 WebGL 或使用更新的 Safari / Chrome；岩点草稿仍然保留。'); return; }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, touchDevice ? 1 : 2));
     renderer.setClearColor('#e5e9e5'); renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.setAttribute('aria-label', '天宇一楼三维墙面，单指编辑岩点，双指平移与缩放');
     renderer.domElement.setAttribute('role', 'application'); renderer.domElement.tabIndex = 0;
@@ -83,7 +85,8 @@ export default function FloorWallScene(props: Props) {
     base.position.set(WIDTH/2, -PLINTH/2, -.06); modelGroup.add(base);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(WIDTH + 4, 7), new THREE.MeshStandardMaterial({ color: '#bcc5ba', roughness: 1, side: THREE.DoubleSide }));
     floor.rotation.x = -Math.PI / 2; floor.position.set(WIDTH / 2, -.025, 3.4); modelGroup.add(floor);
-    const render = () => renderer.render(scene, camera);
+    let renderFrame = 0, stopped = false;
+    const render = () => { if (!stopped && !renderFrame) renderFrame = requestAnimationFrame(() => { renderFrame = 0; if (!stopped) renderer.render(scene, camera); }); };
     const frame = () => {
       const f = getFace(latest.current.faceId) ?? faces[2];
       const center = new THREE.Vector3(...surfacePoint(f.id,50,50));
@@ -95,7 +98,8 @@ export default function FloorWallScene(props: Props) {
       camera.position.copy(center).add(new THREE.Vector3(latest.current.view.kind === 'side' ? distance*.65 : 0, latest.current.view.kind === 'side' ? distance*.12 : 0, distance));
       controls.update(); render();
     };
-    runtime.current = { scene, camera, renderer, controls, wallMeshes, holdGroup, render, frame };
+    const textures = new Map<string, THREE.Texture>();
+    runtime.current = { scene, camera, renderer, controls, wallMeshes, holdGroup, render, frame, textures, textureSize: touchDevice ? 256 : 512 };
     let lastWidth = 0;
     const resize = () => { const r = host.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return;
       renderer.setSize(r.width, r.height); camera.aspect = r.width/r.height; camera.updateProjectionMatrix();
@@ -169,37 +173,75 @@ export default function FloorWallScene(props: Props) {
     renderer.domElement.addEventListener('dragover', dragover); renderer.domElement.addEventListener('drop', drop);
     renderer.domElement.addEventListener('webglcontextlost', lost);
     resize(); setReady(true);
-    return () => { observer.disconnect(); controls.removeEventListener('change', render); controls.dispose();
+    return () => { stopped = true; cancelAnimationFrame(renderFrame); observer.disconnect(); controls.removeEventListener('change', render); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down, true); renderer.domElement.removeEventListener('pointermove', move, true);
       renderer.domElement.removeEventListener('pointerup', up, true); renderer.domElement.removeEventListener('pointercancel', cancel, true);
       renderer.domElement.removeEventListener('dragover', dragover); renderer.domElement.removeEventListener('drop', drop); renderer.domElement.removeEventListener('webglcontextlost', lost);
-      disposeGroup(modelGroup); disposeGroup(holdGroup); renderer.dispose(); renderer.domElement.remove(); runtime.current = null;
+      disposeGroup(modelGroup); disposeGroup(holdGroup, false); textures.forEach(texture => texture.dispose()); textures.clear(); renderer.dispose(); renderer.domElement.remove(); runtime.current = null;
     };
   }, []);
 
   useEffect(() => {
     const rt = runtime.current; if (!rt) return;
-    let disposed = false; disposeGroup(rt.holdGroup);
+    const existing = new Map(rt.holdGroup.children.map(group => [group.userData.instanceId as string, group as THREE.Group]));
+    const ids = new Set(props.placements.map(p => p.instanceId));
+    for (const [id, group] of existing) if (!ids.has(id)) { disposeGroup(group, false); rt.holdGroup.remove(group); }
     const loader = new THREE.TextureLoader();
     for (const p of props.placements) {
+      const signature = JSON.stringify(p);
+      const previous = existing.get(p.instanceId);
+      if (previous?.userData.signature === signature) continue;
+      if (previous) { disposeGroup(previous, false); rt.holdGroup.remove(previous); }
       const group = new THREE.Group(); group.userData.instanceId = p.instanceId; positionHold(group,p);
+      group.userData.signature = signature;
       const diameter = holdDiameterM(p.hold,p.scale);
       const body = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshStandardMaterial({ color: '#89958d', roughness: .85, transparent:true, opacity:.6 }));
       body.scale.set(diameter*.38,diameter*.28,diameter*.08); group.add(body);
       // Photograph is mounted on the tangent plane; thickness is only a proxy.
       if (p.hold.image.startsWith('/')) {
-        loader.load(p.hold.image, texture => { if (disposed) { texture.dispose(); return; }
-          texture.colorSpace = THREE.SRGBColorSpace;
-          const photo = new THREE.Mesh(new THREE.PlaneGeometry(diameter,diameter), new THREE.MeshBasicMaterial({ map:texture, transparent:true, alphaTest:.15, side:THREE.DoubleSide }));
-          photo.position.z = diameter*.09; group.add(photo); rt.render();
-        }, undefined, () => { /* Keep the shape proxy if a catalogue photo is unavailable. */ });
+        let texture = rt.textures.get(p.hold.image);
+        if (!texture) {
+          texture = loader.load(p.hold.image, loaded => {
+            if (runtime.current !== rt || rt.textures.get(p.hold.image) !== loaded) { loaded.dispose(); return; }
+            // Bound GPU memory on Air 2; retain aspect ratio and transparent pixels.
+            const image = loaded.image as HTMLImageElement;
+            if (Math.max(image.width,image.height) > rt.textureSize) {
+              const scale = rt.textureSize / Math.max(image.width,image.height), canvas = document.createElement('canvas');
+              canvas.width = Math.max(1,Math.round(image.width*scale)); canvas.height = Math.max(1,Math.round(image.height*scale));
+              const context = canvas.getContext('2d');
+              if (context) {
+                context.drawImage(image,0,0,canvas.width,canvas.height);
+                const resized: THREE.Texture<HTMLImageElement | HTMLCanvasElement> = loaded;
+                resized.source = new THREE.Source(canvas); resized.needsUpdate = true;
+              }
+            }
+            rt.render();
+          }, undefined, () => { /* Shape proxy remains if a photograph fails. */ });
+          texture.colorSpace = THREE.SRGBColorSpace; rt.textures.set(p.hold.image,texture);
+        }
+        const photo = new THREE.Mesh(new THREE.PlaneGeometry(diameter,diameter), new THREE.MeshBasicMaterial({ map:texture, transparent:true, alphaTest:.15, side:THREE.DoubleSide }));
+        photo.position.z = diameter*.09; group.add(photo);
       }
       const color = p.instanceId === props.selectedId ? '#ffffff' : p.startLimbs?.length || p.role === 'start' ? '#29b96e' : p.role === 'finish' ? '#e84165' : p.role === 'foot' ? '#05a3b4' : p.routeColor;
       const ring = new THREE.Mesh(new THREE.RingGeometry(diameter*.54,diameter*.54 + (p.instanceId===props.selectedId ? .022 : .012),32), new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide}));
+      ring.userData.selectionRing = true;
       ring.position.z = diameter*.1; group.add(ring); rt.holdGroup.add(group);
     }
-    rt.render(); return () => { disposed = true; };
-  }, [ready, props.placements, props.selectedId]);
+    const used = new Set(props.placements.map(p => p.hold.image));
+    for (const [url, texture] of rt.textures) if (!used.has(url)) { texture.dispose(); rt.textures.delete(url); }
+    rt.render();
+  }, [ready, props.placements]);
+
+  useEffect(() => {
+    const rt = runtime.current; if (!rt) return;
+    for (const group of rt.holdGroup.children) {
+      const p = props.placements.find(p => p.instanceId === group.userData.instanceId);
+      if (!p) continue;
+      const ring = group.children.find(child => child.userData.selectionRing) as THREE.Mesh<THREE.RingGeometry,THREE.MeshBasicMaterial> | undefined;
+      if (ring) ring.material.color.set(p.instanceId===props.selectedId ? '#ffffff' : p.startLimbs?.length || p.role==='start' ? '#29b96e' : p.role==='finish' ? '#e84165' : p.role==='foot' ? '#05a3b4' : p.routeColor);
+    }
+    rt.render();
+  }, [ready, props.selectedId, props.placements]);
 
   useEffect(() => {
     const rt = runtime.current; if (!rt) return;
