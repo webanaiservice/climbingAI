@@ -77,7 +77,7 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
   }
 
   return (
-    <div className={`dashboard-shell ${navigationHidden ? 'board-navigation-hidden' : ''}`}>
+    <div className={`dashboard-shell ${isBoardWorkspace ? 'route-dashboard' : ''} ${navigationHidden ? 'board-navigation-hidden' : ''}`}>
       <Sidebar
         trainingOpen={trainingOpen}
         operationsOpen={operationsOpen}
@@ -108,7 +108,7 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
           boardNavigationHidden={navigationHidden}
           onNavigationToggle={isBoardWorkspace ? toggleBoardNavigation : undefined}
         />
-        <main className="dashboard-main">{children}</main>
+        <main className={`dashboard-main ${isBoardWorkspace ? 'route-dashboard-main' : ''}`}>{children}</main>
       </section>
     </div>
   );

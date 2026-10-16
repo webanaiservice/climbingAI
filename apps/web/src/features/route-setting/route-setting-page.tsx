@@ -41,6 +41,7 @@ import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { modelDisplayName } from "../../lib/model-display-name";
 import FloorWallEditor from './floor-wall-editor';
+import { useWorkspaceLayout } from './use-workspace-layout';
 import { fitFloorPoint, parseFloorDraft, type FloorHold, type FloorPlacement } from './floor-wall-data';
 import { WALL_ID, getFace, workingArea } from '../../../../../packages/config/tianyu-floor-wall';
 import { TianyuRouteEditor } from "./tianyu-route-editor";
@@ -439,6 +440,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("全部");
   const [routeMode, setRouteMode] = useState<RouteMode>(workspace === "training-board" ? "tianyu" : "free");
+  const workspaceRef = useWorkspaceLayout(routeMode);
   const [freePlacements, setFreePlacements] = useState<Placement[]>([]);
   const [floorFaceId, setFloorFaceId] = useState('F2');
   const [pendingFloorHold, setPendingFloorHold] = useState<Hold | null>(null);
@@ -459,6 +461,12 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
   const [boardMaintenanceOpen, setBoardMaintenanceOpen] = useState(false);
   const [activeTianyuTool, setActiveTianyuTool] = useState<'ai' | 'manual'>('ai');
   const [tianyuToolsCollapsed, setTianyuToolsCollapsed] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia('(any-pointer: coarse)').matches) {
+      setFloorTool('none');
+      setTianyuToolsCollapsed(true);
+    }
+  }, []);
   const [showTianyuRouteMarks, setShowTianyuRouteMarks] = useState(true);
   const boardMaintenanceRef = useRef<HTMLDetailsElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1486,6 +1494,11 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
     setRandomBoardDialogOpen(false);
   }
 
+  const floorToolSwitch = <div className="floor-tool-switch" role="group" aria-label="三维定线工具">
+    <button type="button" aria-pressed={floorTool==='library'} onClick={()=>setFloorTool('library')}>岩点库</button>
+    <button type="button" aria-pressed={floorTool==='ai'} onClick={()=>{setFloorTool('ai');setPendingFloorHold(null);}}>AI 辅助定线</button>
+    <button type="button" aria-pressed={floorTool==='none'} onClick={()=>setFloorTool(floorTool==='none'?'library':'none')}>完整看墙</button>
+  </div>;
   const appHeader = (
       <header className="app-header">
         <div className="brand-lockup">
@@ -1503,14 +1516,14 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
             </> : <TabsTrigger value="tianyu" disabled={isGenerating}>天宇训练板</TabsTrigger>}
           </TabsList>
         </Tabs>
-        <div className="header-status">
+        {routeMode === 'free' ? floorToolSwitch : <div className="header-status">
           <span className="status-dot" />
           AI 辅助定线
           <span className="status-divider" />
           {workspace === "training-board"
             ? tianyuLoading ? "正在加载训练板" : `${tianyuHolds.length} 个已安装点位`
             : payload ? `${payload.meta.count} 个独立资产` : "正在整理岩点库"}
-        </div>
+        </div>}
       </header>
   );
   const libraryPanel = (
@@ -1816,7 +1829,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
               </div>
               <label><input type="checkbox" checked={showRouteNumbers} onChange={(event) => setShowRouteNumbers(event.target.checked)} />显示编号</label>
               {routeMode === 'tianyu' && <label><input type="checkbox" aria-label="显示线路标记" checked={showTianyuRouteMarks} onChange={event => setShowTianyuRouteMarks(event.target.checked)} />线路标记</label>}
-              <div className="route-focus-summary" aria-live="polite">
+              <div className="route-focus-summary" data-idle={!focusedRoutePoint && !selectedTianyuHold} aria-live="polite">
                 {focusedRoutePoint ? <><strong>#{routeNumberById.get(focusedRoutePoint.instanceId)} · {focusedRoutePoint.hold.serial}</strong><span>{routePointDescription(focusedRoutePoint)} · {focusedRoutePoint.hold.grip} · {focusedRoutePoint.hold.size}{focusedRoutePoint.technique ? ` · ${focusedRoutePoint.technique}` : ""}</span></> : routeMode === 'tianyu' ? <span>{selectedTianyuHold ? `已选 ${selectedTianyuHold.serial} · ${selectedTianyuHold.grip} · ${selectedTianyuHold.size}` : '直接触摸照片选择岩点；点击“手工定线”后，选点即可加入线路。'}</span> : <span>悬停、点击岩点或下方清单查看详情；默认只显示空心标记，不遮挡抓握面。</span>}
               </div>
             </div>
@@ -2222,7 +2235,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
   </section>;
 
   return (
-    <main className={`route-app ${routeMode === 'tianyu' ? 'tianyu-workspace' : routeMode === 'free' ? 'floor-workspace' : ''}`} data-floor-tool={floorTool} data-active-tool={activeTianyuTool} data-tools-collapsed={tianyuToolsCollapsed}>
+    <main ref={workspaceRef} className={`route-app ${routeMode === 'tianyu' ? 'tianyu-workspace' : routeMode === 'free' ? 'floor-workspace' : ''}`} data-floor-tool={floorTool} data-active-tool={activeTianyuTool} data-tools-collapsed={tianyuToolsCollapsed}>
       {appHeader}
       <section className="workspace-grid">
         {routeMode === 'tianyu' ? <>
@@ -2233,11 +2246,7 @@ export default function RouteSettingPage({ workspace = "operations", storageScop
           </div>
           {aiPanel}{wallPanel}{manualPanel}
         </> : routeMode === 'free' ? <>
-          <div className="floor-tool-switch" role="group" aria-label="三维定线工具">
-            <button type="button" aria-pressed={floorTool==='library'} onClick={()=>setFloorTool('library')}>岩点库</button>
-            <button type="button" aria-pressed={floorTool==='ai'} onClick={()=>{setFloorTool('ai');setPendingFloorHold(null);}}>AI 辅助定线</button>
-            <button type="button" aria-pressed={floorTool==='none'} onClick={()=>setFloorTool(floorTool==='none'?'library':'none')}>完整看墙</button>
-          </div>{floorWallPanel}{libraryPanel}{aiPanel}
+          {floorWallPanel}{libraryPanel}{aiPanel}
         </> : <>{libraryPanel}{wallPanel}{aiPanel}</>}
       </section>
 

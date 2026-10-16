@@ -20,6 +20,7 @@ export default function FloorWallEditor(props: Props) {
   const [status,setStatus] = useState('');
   const [savedFingerprint,setSavedFingerprint] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const viewMenu = useRef<HTMLDetailsElement>(null);
   const point = props.placements.find(p=>p.instanceId===props.selectedId), face = getFace(props.faceId)!;
   const area = workingArea(props.faceId);
   function save() { try { localStorage.setItem(props.storageKey, serializeFloorDraft(props.placements,props.faceId)); setSavedFingerprint(JSON.stringify(props.placements)); setStatus('已保存到本机；下次打开自动恢复。'); } catch { setStatus('本机存储不可用，请导出草稿文件。'); } }
@@ -50,14 +51,18 @@ export default function FloorWallEditor(props: Props) {
       <div className="floor-wall-buttons" aria-label="三维视角">
         <button type="button" aria-pressed={interaction==='edit'} onClick={()=>setInteraction('edit')}>编辑岩点</button>
         <button type="button" aria-pressed={interaction==='orbit'} onClick={()=>{setInteraction('orbit');props.onCancelPlace();}}>旋转视角</button>
-        {([['front','正视墙段'],['side','侧看倾角'],['all','查看全墙']] as const).map(([kind,label])=><button type="button" key={kind} onClick={()=>setView(v=>({kind,nonce:v.nonce+1}))}>{label}</button>)}
+        <details className="floor-view-menu" ref={viewMenu}><summary>视角 ▾</summary><div>
+          {([['front','正视墙段'],['side','侧看倾角'],['all','查看全墙']] as const).map(([kind,label])=><button type="button" key={kind} onClick={()=>{setView(v=>({kind,nonce:v.nonce+1}));if(viewMenu.current)viewMenu.current.open=false;}}>{label}</button>)}
+        </div></details>
       </div>
     </div>
     <div className="floor-wall-hint" role="status">{props.pendingHold ? <><strong>待放置：{props.pendingHold.serial}</strong> · 轻点墙面安装 <button type="button" onClick={props.onCancelPlace}>取消放置</button></> : interaction==='edit' ? '拖动岩点调整位置；空白处拖动平移，双指 / 滚轮缩放。' : '单指 / 鼠标拖动旋转；双指平移与缩放。'}</div>
+    <div className="floor-scene-area">
     <Scene placements={props.placements} selectedId={props.selectedId} faceId={props.faceId} pendingHold={props.pendingHold} interaction={interaction} view={view}
       onSelect={props.onSelect} onMove={(id,hit)=>props.onUpdate(id,hit)} onPlace={props.onPlace}/>
-    <div className="floor-wall-selection" aria-label="三维岩点编辑">
+    <div className="floor-wall-selection" aria-label="三维岩点编辑" hidden={!point}>
       {point ? <>
+        <button type="button" className="floor-selection-close" aria-label="收起岩点编辑" onClick={()=>props.onSelect(null)}>×</button>
         <div className="floor-selected-identity"><img src={point.hold.image} alt={point.hold.serial}/><span><strong>{point.hold.serial}</strong><small>{getFace(point.surfaceId??'F2')?.label} · {point.hold.grip}</small></span></div>
         <label>用途<select aria-label="岩点用途" value={point.role} onChange={e=>setRole(e.target.value as FloorPlacement['role'])}>
           {([['manual','普通点'],['start','起步手点'],['move','手点'],['foot','脚点'],['finish','终点']] as const).map(([value,label])=><option value={value} key={value}>{label}</option>)}
@@ -74,6 +79,7 @@ export default function FloorWallEditor(props: Props) {
           <label>线路颜色<input aria-label="岩点线路颜色" type="color" value={point.routeColor} onChange={e=>props.onUpdate(point.instanceId,{routeColor:e.target.value})}/></label>
         </div></details>
       </> : <span>从岩点库选点，轻点墙面放置；点选已安装岩点可编辑。</span>}
+    </div>
     </div>
     <div className="floor-wall-footer">
       <div className="floor-wall-buttons"><button type="button" onClick={save}>保存本机</button><button type="button" onClick={exportFile}>导出草稿</button><button type="button" disabled={props.busy} onClick={()=>input.current?.click()}>导入草稿</button></div>
