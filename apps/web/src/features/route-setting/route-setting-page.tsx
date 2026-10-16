@@ -40,6 +40,9 @@ import { Skeleton } from "./ui/skeleton";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { modelDisplayName } from "../../lib/model-display-name";
+import FloorWallEditor from './floor-wall-editor';
+import { fitFloorPoint, parseFloorDraft, type FloorHold, type FloorPlacement } from './floor-wall-data';
+import { WALL_ID, getFace, workingArea } from '../../../../../packages/config/tianyu-floor-wall';
 import { TianyuRouteEditor } from "./tianyu-route-editor";
 import { pickTianyuPhotoTarget } from "./tianyu-interaction";
 import { addRoutePoint, newTianyuRoute, routeFromCandidate, type TianyuRouteEditorState } from "./tianyu-route";
@@ -65,20 +68,7 @@ import {
   SelectValue,
 } from "./ui/select";
 
-type Hold = {
-  id: string;
-  serial: string;
-  brand: string;
-  material: string;
-  productType: string;
-  description: string;
-  grip: string;
-  size: string;
-  sizeLabel: string;
-  dimensions: string;
-  price: number;
-  image: string;
-};
+type Hold = FloorHold;
 
 type HoldPayload = {
   meta: {
@@ -94,21 +84,7 @@ type PlacementRole = "manual" | "start" | "move" | "foot" | "finish";
 type StartLimb = "LH" | "RH" | "LF" | "RF";
 type RouteMode = "free" | "fixed" | "tianyu";
 
-type Placement = {
-  instanceId: string;
-  hold: Hold;
-  x: number;
-  y: number;
-  rotation: number;
-  scale: number;
-  role: PlacementRole;
-  roles?: PlacementRole[];
-  startLimbs?: StartLimb[];
-  step?: number;
-  hand?: "left" | "right" | "both";
-  technique?: string;
-  routeColor: string;
-};
+type Placement = FloorPlacement;
 
 type Candidate = {
   sourceModel?: RouteModel;
@@ -204,6 +180,7 @@ type AiCandidateResponse = {
     placements: Array<{
       holdId: string;
       instanceId?: string;
+      surfaceId?: string;
       x: number;
       y: number;
       rotation: number;
@@ -457,12 +434,17 @@ function tianyuHoldToAsset(point: TianyuHold): Hold {
   };
 }
 
-export default function RouteSettingPage({ workspace = "operations" }: { workspace?: "operations" | "training-board" }) {
+export default function RouteSettingPage({ workspace = "operations", storageScope = 'local' }: { workspace?: "operations" | "training-board"; storageScope?: string }) {
   const [payload, setPayload] = useState<HoldPayload | null>(null);
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("全部");
   const [routeMode, setRouteMode] = useState<RouteMode>(workspace === "training-board" ? "tianyu" : "free");
   const [freePlacements, setFreePlacements] = useState<Placement[]>([]);
+  const [floorFaceId, setFloorFaceId] = useState('F2');
+  const [pendingFloorHold, setPendingFloorHold] = useState<Hold | null>(null);
+  const [floorTool, setFloorTool] = useState<'library' | 'ai' | 'none'>('library');
+  const [floorNotice, setFloorNotice] = useState('');
+  const floorStorageKey = `climbing.floor-wall.${WALL_ID}.${storageScope}`;
   const [fixedBoardPlacements, setFixedBoardPlacements] = useState<Placement[]>([]);
   const [tianyuHolds, setTianyuHolds] = useState<TianyuHold[]>([]);
   const [tianyuRegistration, setTianyuRegistration] = useState<TianyuRegistrationReport | null>(null);
@@ -560,6 +542,11 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
       })
       .then((loadedPayload) => {
         setPayload(loadedPayload);
+        let hasFreeDraft = false;
+        try {
+          const raw = localStorage.getItem(floorStorageKey);
+          if (raw) { const draft = parseFloorDraft(raw, loadedPayload.holds); setFreePlacements(draft.placements); setFloorFaceId(draft.faceId); hasFreeDraft = true; setFloorNotice('已恢复本机保存的三维墙面草稿。'); }
+        } catch { setFloorNotice('三维草稿无法读取，原始存储仍保留，可重新导入。'); }
         try {
           const raw = window.localStorage.getItem(fixedBoardStorageKey);
           if (!raw) return;
@@ -583,7 +570,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
           });
           if (restored.length === 0) throw new Error("保存的岩点已不在当前岩点库中");
           setFixedBoardPlacements(restored);
-          setRouteMode("fixed");
+          if (!hasFreeDraft) setRouteMode("fixed");
           setHasSavedFixedBoard(true);
           setFixedBoardSavedAt(typeof saved.savedAt === "string" ? saved.savedAt : null);
           setFixedBoardDirty(false);
@@ -595,7 +582,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
         }
       })
       .catch(() => setPayload({ meta: { count: 0, excludedSets: 0, excludedIncomplete: 0, byMaterial: {} }, holds: [] }));
-  }, [workspace]);
+  }, [workspace, floorStorageKey]);
 
   useEffect(() => {
     if (workspace !== "training-board") return;
@@ -824,9 +811,9 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
       { label: "V6 · 技术横移", prompt: `V6 技术型，4 点起步，包含横移，避免无用点，${routeMode === "tianyu" ? `${tianyuAngle}°仰角` : "直壁"}。` },
     ]
     : [
-      { label: "V2 · 流畅入门", prompt: "V2 入门流畅，4 点起步，直壁。" },
-      { label: "V5 · 约 9 点", prompt: "V5 力量直上，3 点起步，总安装点约 9 个，直壁。" },
-      { label: "V6 · 技术横移", prompt: "V6 技术型，4 点起步，包含横移，避免无用点，直壁。" },
+      { label: "V2 · 流畅入门", prompt: "V2 入门流畅，4 点起步，适应当前墙段倾角。" },
+      { label: "V5 · 约 9 点", prompt: "V5 力量直上，3 点起步，总安装点约 9 个。" },
+      { label: "V6 · 技术横移", prompt: "V6 技术型，4 点起步，包含横移，避免无用点。" },
     ];
 
   const addToWall = useCallback((hold: Hold, x = 50, y = 50) => {
@@ -932,6 +919,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
               })),
             } : {}),
             ...(requestMode === "tianyu" ? { wallAngle: tianyuAngle } : {}),
+            ...(requestMode === 'free' ? { wall: { id: WALL_ID, faceId: floorFaceId } } : {}),
           }),
         });
         const result = (await response.json()) as AiCandidateResponse;
@@ -962,8 +950,9 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
             return [{
               instanceId: boardPoint?.instanceId ?? `ai-${generationId}-${candidateIndex}-${placementIndex}-${hold.id}`,
               hold,
-              x: boardPoint?.x ?? snap(placement.x),
-              y: boardPoint?.y ?? snap(placement.y),
+              x: boardPoint?.x ?? (requestMode === 'free' ? placement.x : snap(placement.x)),
+              y: boardPoint?.y ?? (requestMode === 'free' ? placement.y : snap(placement.y)),
+              surfaceId: requestMode === 'free' ? placement.surfaceId ?? floorFaceId : undefined,
               rotation: boardPoint?.rotation ?? placement.rotation,
               scale: boardPoint?.scale ?? placement.scale,
               role: placement.role,
@@ -998,7 +987,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
         setIsGenerating(false);
       }
     },
-    [confirmedTianyuHolds, fixedBoardPlacements, isGenerating, model, payload, prompt, routeMode, setPrompt, tianyuAngle, tianyuVerticalCoverage, updateModeSession, tianyuEditor],
+    [confirmedTianyuHolds, fixedBoardPlacements, isGenerating, model, payload, prompt, routeMode, setPrompt, tianyuAngle, tianyuVerticalCoverage, updateModeSession, tianyuEditor, floorFaceId],
   );
 
   const applyCandidate = useCallback((candidate: Candidate) => {
@@ -1010,7 +999,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
       setTianyuToolsCollapsed(false);
       setTianyuEditor({ dirty: true, document: routeFromCandidate(tianyuHolds, tianyuAngle, tianyuReviewRevision, candidate, candidate.sourceModel ?? model, candidate.sourcePrompt ?? prompt, candidate.generationSource) });
     }
-    if (candidate.mode === "free") setFreePlacements(candidate.placements);
+    if (candidate.mode === "free") { setFreePlacements(candidate.placements); setPendingFloorHold(null); const face = candidate.placements[0]?.surfaceId; if (face && getFace(face)?.kind === 'main') setFloorFaceId(face); }
     updateModeSession(candidate.mode, {
       activeCandidateId: candidate.id,
       manualReviewRequired: false,
@@ -1161,6 +1150,26 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
       ...(routeMode === "fixed" ? { candidates: [] } : {}),
     });
     if (routeMode === "fixed") setFixedBoardDirty(true);
+  }
+
+  function placeFloorHold(holdId: string, hit: { surfaceId: string; x: number; y: number }) {
+    const hold = payload?.holds.find(h => h.id === holdId); if (!hold) return;
+    if (freePlacements.length >= 500) { setFloorNotice('当前草稿最多支持 500 个安装点，请先拆分作业。'); return; }
+    try {
+      const position = fitFloorPoint(hold,hit), instanceId = crypto.randomUUID();
+      setFreePlacements(current => [...current, { instanceId, hold, ...position, rotation:0, scale:1, role:'manual', routeColor:'#ff5a36' }]);
+      setSelectedId(instanceId); setPendingFloorHold(null); setFloorNotice('');
+      updateModeSession('free',{ activeCandidateId:null, manualReviewRequired:true });
+    } catch(error) { setFloorNotice(error instanceof Error ? error.message : '无法放置岩点'); }
+  }
+
+  function updateFloorHold(id: string, patch: Partial<Placement>) {
+    const point = freePlacements.find(p => p.instanceId === id); if (!point) return;
+    try {
+      const next = {...point,...patch};
+      const fitted = fitFloorPoint(next.hold,{surfaceId:next.surfaceId??'F2',x:next.x,y:next.y},next.scale);
+      updatePlacement(id,{...patch,...fitted}); setFloorNotice('');
+    } catch(error) { setFloorNotice(error instanceof Error ? error.message : '无法移动岩点'); }
   }
 
   function startMove(event: React.PointerEvent<HTMLButtonElement>, placement: Placement) {
@@ -1483,7 +1492,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
           <div className="brand-mark" aria-hidden="true"><Grip size={20} /></div>
           <div>
             <h1>{workspace === "training-board" ? "训练板定线" : "岩馆定线台"}</h1>
-            <p>{routeMode === "tianyu" ? `天宇训练板 · ${displayedTianyuAngle}°仰角` : "4 × 4 m 直壁 · 20 cm 网格"}</p>
+            <p>{routeMode === "tianyu" ? `天宇训练板 · ${displayedTianyuAngle}°仰角` : routeMode === 'free' ? '天宇一楼 · 6 段三维墙面' : "4 × 4 m 直壁 · 20 cm 网格"}</p>
           </div>
         </div>
         <Tabs className="mode-switch" value={routeMode} onValueChange={changeRouteMode}>
@@ -1677,7 +1686,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                 )}
                 {holds.map((hold) => (
                   <article
-                    className="hold-card"
+                    className={`hold-card ${routeMode === 'free' && pendingFloorHold?.id === hold.id ? 'floor-pending-asset' : ''}`}
                     draggable
                     key={hold.id}
                     onDragStart={(event) => {
@@ -1688,7 +1697,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                     <button
                       className="hold-image-wrap"
                       type="button"
-                      onClick={() => addToWall(hold)}
+                      onClick={() => { if (routeMode === 'free') { setPendingFloorHold(hold); setSelectedId(null); } else addToWall(hold); }}
                       aria-label={`把 ${hold.serial} 添加到墙面`}
                     >
                       <img src={hold.image} alt={`${hold.serial} ${hold.description}`} />
@@ -1698,7 +1707,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                       <span>{hold.grip} · {hold.size}</span>
                       <small>{hold.material} / {hold.brand}</small>
                     </div>
-                    <span className="drag-hint">拖</span>
+                    <span className="drag-hint">{routeMode === 'free' ? '选' : '拖'}</span>
                   </article>
                 ))}
               </div>
@@ -1706,7 +1715,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
                 已排除 {payload?.meta.excludedSets ?? 399} 个多件套装；
                 {routeMode === "fixed"
                   ? "先用图片点击或拖拽完成固定板，AI 只会从板上已安装点中选线。"
-                  : "图片点击或拖拽均可上墙。"}
+                  : "先选岩点，再轻点三维墙面放置；鼠标也可拖拽上墙。"}
               </p>
             </>
           )}
@@ -2010,6 +2019,7 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
             </div>
             <Sparkles size={20} className="accent-icon" />
           </div>
+          {routeMode === 'free' && <div className="fixed-mode-note"><strong>{getFace(floorFaceId)?.label}</strong><span>在当前墙段约 {workingArea(floorFaceId).widthM.toFixed(2)} × {workingArea(floorFaceId).heightM.toFixed(2)} m 作业区生成，按实际尺寸与倾角校验；采用后可在 3D 墙面继续调整。</span></div>}
           {routeMode === "fixed" && (
             <div className="fixed-mode-note">
               <strong>板面位置锁定</strong>
@@ -2198,8 +2208,21 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
     />
   </aside>;
 
+  const floorWallPanel = <section className="wall-stage floor-wall-stage" aria-label="天宇一楼三维定线工作区">
+    <div className="wall-toolbar"><div><span className="eyebrow dark">自由定线 · 设计图重建</span><h2>天宇一楼 · 3D 墙面</h2></div>
+      <div className="wall-actions"><span>{freePlacements.length} 个已安装岩点</span><Button variant="outline" size="sm" disabled={!freePlacements.length || isGenerating} onClick={()=>setClearDialogOpen(true)}>清空</Button></div>
+    </div>
+    <FloorWallEditor holds={payload?.holds??[]} placements={freePlacements} selectedId={selectedId} faceId={floorFaceId} pendingHold={pendingFloorHold}
+      storageKey={floorStorageKey} busy={isGenerating} onSelect={setSelectedId} onFace={setFloorFaceId} onCancelPlace={()=>setPendingFloorHold(null)}
+      onPlace={placeFloorHold} onUpdate={updateFloorHold} onRemove={removePlacement}
+      onRestore={(placements,faceId)=>{setFreePlacements(placements);setFloorFaceId(faceId);setSelectedId(null);setPendingFloorHold(null);updateModeSession('free',{activeCandidateId:null,manualReviewRequired:true,candidates:[]});}}/>
+    {floorNotice && <p className="floor-wall-notice" role="status">{floorNotice}</p>}
+    {manualReviewRequired && <p className="floor-wall-review-note">人工编辑草稿 · 原候选评分不再适用，请试爬复核。</p>}
+    <details className="floor-installed-list"><summary>已安装岩点 · {freePlacements.length}</summary><div>{freePlacements.map((point,i)=><button type="button" key={point.instanceId} aria-pressed={selectedId===point.instanceId} onClick={()=>{setSelectedId(point.instanceId); const face=getFace(point.surfaceId??'F2'); if(face?.kind==='main')setFloorFaceId(face.id);}}>{i+1}. {point.hold.serial} · {point.surfaceId} · {routePointDescription(point)}</button>)}</div></details>
+  </section>;
+
   return (
-    <main className={`route-app ${routeMode === 'tianyu' ? 'tianyu-workspace' : ''}`} data-active-tool={activeTianyuTool} data-tools-collapsed={tianyuToolsCollapsed}>
+    <main className={`route-app ${routeMode === 'tianyu' ? 'tianyu-workspace' : routeMode === 'free' ? 'floor-workspace' : ''}`} data-floor-tool={floorTool} data-active-tool={activeTianyuTool} data-tools-collapsed={tianyuToolsCollapsed}>
       {appHeader}
       <section className="workspace-grid">
         {routeMode === 'tianyu' ? <>
@@ -2209,6 +2232,12 @@ export default function RouteSettingPage({ workspace = "operations" }: { workspa
             <button type="button" aria-pressed={tianyuToolsCollapsed} onClick={() => setTianyuToolsCollapsed(value => !value)}>完整看板</button>
           </div>
           {aiPanel}{wallPanel}{manualPanel}
+        </> : routeMode === 'free' ? <>
+          <div className="floor-tool-switch" role="group" aria-label="三维定线工具">
+            <button type="button" aria-pressed={floorTool==='library'} onClick={()=>setFloorTool('library')}>岩点库</button>
+            <button type="button" aria-pressed={floorTool==='ai'} onClick={()=>{setFloorTool('ai');setPendingFloorHold(null);}}>AI 辅助定线</button>
+            <button type="button" aria-pressed={floorTool==='none'} onClick={()=>setFloorTool(floorTool==='none'?'library':'none')}>完整看墙</button>
+          </div>{floorWallPanel}{libraryPanel}{aiPanel}
         </> : <>{libraryPanel}{wallPanel}{aiPanel}</>}
       </section>
 

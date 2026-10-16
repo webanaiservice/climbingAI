@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AppEnvironment } from '../config/environment';
+import { WALL_ID, getFace, workingArea, workingToSurface } from '../../../../packages/config/tianyu-floor-wall';
 
 import {
   allocationFor,
@@ -12,6 +13,7 @@ import {
   type AiPlan,
   type FixedBoardPlacement,
   type HoldAsset,
+  type RouteConstraints,
 } from "./route-engine";
 
 const allowedModels = [
@@ -46,6 +48,7 @@ const requestSchema = z.object({
   model: z.enum(allowedModels),
   holds: z.array(holdSchema).min(6).max(500),
   mode: z.enum(["free", "fixed"]).optional(),
+  wall: z.object({ id: z.literal(WALL_ID), faceId: z.enum(['F1', 'F2', 'F3', 'F4', 'F5', 'F6']) }).optional(),
   boardPlacements: z.array(boardPlacementSchema).max(500).optional(),
   wallAngle: z.number().finite().int().min(0).max(60).refine((value) => value % 5 === 0, {
     message: "墙面角度必须以 5° 为步进",
@@ -111,7 +114,7 @@ const routePlanJsonSchema = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `你是一名经验丰富的抱石定线员。你的任务不是直接猜坐标或库存编号，而是为 4m × 4m 抱石墙编写可执行的左右手动作计划；墙面角度以用户上下文为准。
+const SYSTEM_PROMPT = `你是一名经验丰富的抱石定线员。你的任务不是直接猜坐标或库存编号，而是为指定墙面编写可执行的左右手动作计划；尺寸与倾角以用户上下文为准。正角为仰角、负角为缓斜；仰角越大越重视脚点持续受力与核心张力，缓斜墙更重视平衡与重心。
 
 要求：
 1. 每条计划要有清晰且不同的动作主题，左右手顺序应可读，避免同一只手无意义地连续移动。
@@ -223,11 +226,12 @@ async function requestClaudePlan(model: string, apiKey: string, base: string, us
   return plansSchema.parse(parseJsonObject(text)).plans;
 }
 
-function buildUserContent(prompt: string, constraints: ReturnType<typeof parseRouteConstraints>["constraints"], holds: HoldAsset[]) {
+function buildUserContent(prompt: string, constraints: RouteConstraints, holds: HoldAsset[]) {
   const allocation = allocationFor(constraints);
   return JSON.stringify({
     userRequest: prompt,
-    wall: { widthM: 4, heightM: 4, angle: "vertical", gridCm: 20 },
+    wall: { widthM: constraints.wallWidthM ?? 4, heightM: constraints.wallHeightM ?? 4, angleDegreesFromVertical: constraints.wallAngleDegrees ?? 0,
+      angleConvention: '正值为仰角，负值为缓斜。高度沿墙面计算，坐标范围限定在所选主墙段内接作业区。', gridNote: '归一化网格，使用实际米制距离校验' },
     interpretedRequirements: {
       targetGrade: `V${constraints.grade}`,
       style: constraints.style,
@@ -295,8 +299,9 @@ function compactReason(reason?: string) {
   return reason.length > 180 ? `${reason.slice(0, 177)}…` : reason;
 }
 
-function fallbackResponse(prompt: string, holds: HoldAsset[], model: string, reason?: string) {
-  const { constraints, warnings } = parseRouteConstraints(prompt);
+function fallbackResponse(prompt: string, holds: HoldAsset[], model: string, reason?: string, wall?: { id: string; faceId: string }) {
+  const { constraints: parsed, warnings } = parseRouteConstraints(prompt);
+  const constraints = floorConstraints(parsed, wall);
   const conciseReason = compactReason(reason);
   return {
     model,
@@ -304,8 +309,21 @@ function fallbackResponse(prompt: string, holds: HoldAsset[], model: string, rea
     notice: conciseReason ? `云端动作规划暂不可用，已使用本地约束求解器：${conciseReason}` : "已使用本地约束求解器。",
     constraints,
     warnings: [...warnings, ...inventoryWarnings(holds)],
-    candidates: solveAndRankPlans(fallbackPlans(constraints), holds, constraints),
+    wall,
+    candidates: mapFloorCandidates(solveAndRankPlans(fallbackPlans(constraints), holds, constraints), wall),
   };
+}
+
+function floorConstraints(parsed: ReturnType<typeof parseRouteConstraints>['constraints'], wall?: { faceId: string }) {
+  if (!wall) return parsed;
+  const area = workingArea(wall.faceId);
+  return { ...parsed, wallWidthM: area.widthM, wallHeightM: area.heightM, wallAngleDegrees: area.angle };
+}
+
+function mapFloorCandidates(candidates: ReturnType<typeof solveAndRankPlans>, wall?: { faceId: string }) {
+  if (!wall) return candidates;
+  return candidates.map(candidate => ({ ...candidate, subtitle: `${getFace(wall.faceId)?.label} · ${candidate.subtitle}`,
+    placements: candidate.placements.map(point => ({ ...point, ...workingToSurface(wall.faceId, point.x, point.y), surfaceId: wall.faceId })) }));
 }
 
 function fixedFallbackResponse(
@@ -348,12 +366,13 @@ export async function generateRouteCandidates(
 
   const holds = input.holds satisfies HoldAsset[];
   const mode = input.mode ?? (input.boardPlacements?.length ? "fixed" : "free");
+  if (input.wall && mode !== 'free') return Response.json({ error: '三维墙面仅用于自由定线' }, { status: 400 });
   const boardPlacements = (input.boardPlacements ?? []) satisfies FixedBoardPlacement[];
   const wallAngle = mode === "fixed" ? (input.wallAngle ?? 0) : 0;
   const { constraints: parsedConstraints, warnings: parserWarnings } = parseRouteConstraints(input.prompt);
   const constraints = mode === "fixed"
     ? { ...parsedConstraints, wallAngleDegrees: wallAngle }
-    : parsedConstraints;
+    : floorConstraints(parsedConstraints, input.wall);
   const holdById = new Map(holds.map((hold) => [hold.id, hold]));
   const installedAssets = boardPlacements.map((placement) => holdById.get(placement.holdId)).filter((hold): hold is HoldAsset => Boolean(hold));
   const warnings = [...parserWarnings, ...inventoryWarnings(mode === "fixed" ? installedAssets : holds)];
@@ -383,7 +402,7 @@ export async function generateRouteCandidates(
     try {
       return Response.json(mode === "fixed"
         ? fixedFallbackResponse(input.prompt, holds, boardPlacements, input.model, wallAngle, "后台尚未配置模型密钥")
-        : fallbackResponse(input.prompt, holds, input.model, "后台尚未配置模型密钥"));
+        : fallbackResponse(input.prompt, holds, input.model, "后台尚未配置模型密钥", input.wall));
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : "本地求解失败" }, { status: 422 });
     }
@@ -402,7 +421,7 @@ export async function generateRouteCandidates(
     try {
       return Response.json(mode === "fixed"
         ? fixedFallbackResponse(input.prompt, holds, boardPlacements, input.model, wallAngle, reason)
-        : fallbackResponse(input.prompt, holds, input.model, reason));
+        : fallbackResponse(input.prompt, holds, input.model, reason, input.wall));
     } catch (solverError) {
       return Response.json({
         error: solverError instanceof Error ? solverError.message : "动作规划与本地求解均失败",
@@ -416,8 +435,8 @@ export async function generateRouteCandidates(
   try {
     const candidates = mode === "fixed"
       ? solveAndRankFixedBoardPlans(plans, boardPlacements, holds, constraints)
-      : solveAndRankPlans(plans, holds, constraints);
-    return Response.json({ mode, model: input.model, source: "ai", constraints, warnings, candidates });
+      : mapFloorCandidates(solveAndRankPlans(plans, holds, constraints), input.wall);
+    return Response.json({ mode, model: input.model, source: "ai", constraints, warnings, candidates, wall: input.wall });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "没有找到同时满足难度与线路约束的候选", constraints, warnings }, { status: 422 });
   }

@@ -38,7 +38,7 @@ export function DashboardShell({ children, session, routeSettingEnabled }: Dashb
   }, [center, activeHref]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [boardNavigationHidden, setBoardNavigationHidden] = useState(false);
-  const isBoardWorkspace = pathname === '/dashboard/training/board-setting';
+  const isBoardWorkspace = pathname === '/dashboard/training/board-setting' || pathname === '/dashboard/route-setting';
   const navigationHidden = isBoardWorkspace && boardNavigationHidden;
   useEffect(() => {
     try {
